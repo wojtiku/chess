@@ -11,10 +11,14 @@ const VALUE: Readonly<Record<PieceType, number>> = { p: 1, n: 3, b: 3, r: 5, q: 
 /** The Unicode symbols, keyed by the colour of the piece that was taken — so a
  *  black queen taken by White is drawn as Black's queen, not as a white one.
  *  Written out here rather than imported from `Board/pieces` so this panel needs
- *  nothing but the rules layer; Task 11 replaces both tables with one. */
+ *  nothing but the rules layer; Task 11 replaces both tables with one.
+ *
+ *  The `k` entries are unreachable — a king is never captured — but they are the
+ *  real kings rather than a stand-in pawn, because a table that lies in its one
+ *  dead entry is a table nobody can trust in the fifteen that matter. */
 const GLYPH: Readonly<Record<Side, Readonly<Record<PieceType, string>>>> = {
-  b: { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♟' },
-  w: { p: '♙', n: '♘', b: '♗', r: '♖', q: '♕', k: '♙' },
+  b: { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' },
+  w: { p: '♙', n: '♘', b: '♗', r: '♖', q: '♕', k: '♔' },
 };
 
 /** Score-sheet order, heaviest first, which is also the display order. */
@@ -170,7 +174,37 @@ function CapturedRow({
   );
 }
 
-export default function Captured({ game }: { game: Chess }) {
+export interface CapturedProps {
+  /**
+   * The position to report on. **It must be a replay-built `Chess`** — one whose
+   * move history is intact, i.e. built by replaying the move list (`gameAt(state)`
+   * from `game/gameState.ts`, or by calling `move()`), never by loading a FEN.
+   *
+   * The reason is that the two halves of this panel read two different sources, and
+   * only one of them is the board:
+   *
+   *  - the captured pieces come from `move.captured` over `game.history({verbose:
+   *    true})`, because "what has been taken" cannot be recovered from a board
+   *    (see `capturedBy`);
+   *  - the material difference comes from `game.board()`.
+   *
+   * So a caller that hands over a bare `new Chess(fen)` gets the **worse** of the
+   * two failure modes, not an obvious one: the material number is computed from
+   * the board and is therefore CORRECT, while both capture lists come back empty
+   * because the history is empty. The panel renders `+1` next to no pieces at all
+   * and says "Captured by White: nothing." — a wrong answer with no error, no
+   * warning and no failed test. `Captured.test.tsx` pins that exact symptom so the
+   * precondition stays true in executable form rather than only in prose.
+   *
+   * There is no runtime check for it. A `Chess` carries no flag saying whether it
+   * was replayed or loaded, and refusing to render would mean guessing; the honest
+   * options are to document the contract (here) or to widen the prop to the move
+   * list itself, which is Task 10's to decide.
+   */
+  game: Chess;
+}
+
+export default function Captured({ game }: CapturedProps) {
   const taken = capturedBy(game);
   const diff = materialDiff(game);
   return (

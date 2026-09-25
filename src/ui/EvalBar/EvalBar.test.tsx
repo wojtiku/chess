@@ -6,6 +6,9 @@
 // pair is asserted directly rather than only through the resulting share.
 
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { render, screen } from '@testing-library/react';
 import EvalBar, { formatEvalLabel, toWhiteRelative, whiteShare } from './EvalBar';
 
@@ -246,5 +249,51 @@ describe('EvalBar', () => {
         unmount();
       }
     });
+  });
+});
+
+// The bar easing between values is the other half of the "does not jitter"
+// requirement, and half of it is CSS — which jsdom does not render, so nothing
+// above can observe it. These are TEXT assertions over the stylesheet, not
+// behavioural ones: they cannot tell you the bar animates, only that the rule
+// that animates it is still in the file. That is worth having anyway, because this
+// is the only `transition` in the project's CSS, so deleting it would break the
+// requirement silently and leave every behavioural test green.
+describe('EvalBar.css (a TEXT assertion — it reads the file, it does not render it)', () => {
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'EvalBar.css'), 'utf8');
+
+  /** The declarations of the first rule whose selector list mentions `selector`. */
+  const ruleFor = (selector: string): string => {
+    const found = new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`).exec(css);
+    if (found === null || found[1] === undefined) {
+      throw new Error(`no rule for .${selector} in EvalBar.css`);
+    }
+    return found[1];
+  };
+
+  it('transitions the height of both fills, with a duration, and nothing else', () => {
+    // Both fills, because one easing while the other snaps is exactly the jitter the
+    // requirement rules out. A duration, because `transition: height` with no time
+    // is invalid CSS and animates nothing. And `height` specifically: the component
+    // sets `height` inline and changes nothing else, so a transition on `width` or
+    // `background` would leave the bar snapping exactly as before. The duration is
+    // NOT pinned to a value, so a retune is not a test failure.
+    for (const selector of ['evalbar-black', 'evalbar-white']) {
+      const declared = [...ruleFor(selector).matchAll(/transition:\s*([^;]+)/g)].map(
+        (m) => (m[1] ?? '').trim(),
+      );
+      expect(declared.length, `${selector} has a transition`).toBeGreaterThan(0);
+      for (const value of declared) {
+        expect(value, `${selector} animates the height`).toMatch(/^height\s+[\d.]+m?s\b/);
+      }
+    }
+  });
+
+  it('neutralises the transition when the reader has asked for less motion', () => {
+    const query = '@media (prefers-reduced-motion: reduce)';
+    expect(css).toContain(query);
+    const block = css.slice(css.indexOf(query));
+    expect(block).toMatch(/\.evalbar-black[^{]*\{[^}]*transition:\s*none/);
+    expect(block).toMatch(/\.evalbar-white[^{]*\{[^}]*transition:\s*none/);
   });
 });

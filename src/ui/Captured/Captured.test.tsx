@@ -220,6 +220,36 @@ describe('Captured', () => {
     expect(screen.getByTestId('captured-advantage-w').textContent).toBe('+9');
   });
 
+  it('shows a correct material number beside empty lists for a game loaded from a FEN', () => {
+    // THE VIOLATING CALLER, asserted rather than only documented. This is exactly
+    // what `CapturedProps.game` warns about: a bare `new Chess(fen)` has an empty
+    // move history, so the capture lists are empty while the board-derived material
+    // number stays perfectly correct. The result is a wrong panel with no error and
+    // no warning, which is why the precondition lives on the prop.
+    //
+    // The FEN is the position after 1.e4 d5 2.exd5, so Black really is a pawn down.
+    const loaded = new Chess('rnbqkbnr/ppp1pppp/8/3P4/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2');
+    expect(loaded.history()).toEqual([]);
+    render(<Captured game={loaded} />);
+    expect(glyphText('w')).toBe('');
+    expect(glyphText('b')).toBe('');
+    expect(screen.getByTestId('captured-advantage-w').textContent).toBe('+1');
+    // The spoken label states the contradiction outright — "nothing" taken, and yet
+    // up a pawn — which is the loudest this failure can be. A screen-reader user
+    // hears it immediately; a sighted user sees `+1` beside an empty row.
+    expect(screen.getByTestId('captured-by-w')).toHaveAttribute(
+      'aria-label',
+      'Captured by White: nothing. White is up 1 point of material.',
+    );
+
+    // ...and the same position handed over REPLAYED reads correctly, which is what
+    // makes this a precondition on the caller rather than a defect in the panel.
+    const replayed = played('e4', 'd5', 'exd5');
+    expect(materialDiff(loaded)).toBe(materialDiff(replayed));
+    expect(capturedBy(loaded)).toEqual({ w: [], b: [] });
+    expect(capturedBy(replayed)).toEqual({ w: ['p'], b: [] });
+  });
+
   it('announces each row with the side, the pieces and the material, in words', () => {
     // The glyphs are decorative and the digits are not speakable, so the row
     // carries a sentence for a screen reader instead of two fragments.
