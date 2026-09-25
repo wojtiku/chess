@@ -4100,24 +4100,30 @@ export interface EngineApi {
 }
 
 export function useEngine(): EngineApi {
-  const clientRef = useRef<EngineClient | null>(null);
+  // The client is constructed INSIDE the effect and held in state, never in a
+  // render-body ref. `dispose()` is terminal: once a client is disposed it
+  // refuses to build another worker, so it can never be reused. Under React
+  // StrictMode an effect mounts, cleans up, and re-runs — a ref-constructed
+  // client would survive that cleanup and hand the hook a permanently dead
+  // engine on the second run, so every call would reject with `disposed`.
+  const [client, setClient] = useState<EngineClient | null>(null);
   const [status, setStatus] = useState<EngineStatus>('idle');
   const [error, setError] = useState<Error | null>(null);
 
-  if (clientRef.current === null && typeof Worker !== 'undefined') {
-    clientRef.current = new EngineClient();
-  }
-  const client = clientRef.current;
-
   useEffect(() => {
-    if (!client) return;
-    return client.onStatus((s) => {
+    if (typeof Worker === 'undefined') return;
+    const c = new EngineClient();
+    setClient(c);
+    const off = c.onStatus((s) => {
       setStatus(s);
-      if (s === 'error') setError(client.error);
+      if (s === 'error') setError(c.error);
     });
-  }, [client]);
-
-  useEffect(() => () => client?.dispose(), [client]);
+    return () => {
+      off();
+      c.dispose();
+      setClient(null);
+    };
+  }, []);
 
   const source = useMemo<{ analyze: (fen: string, opts?: { multiPv?: number; movetimeMs?: number }) => Promise<Analysis> } | null>(
     () => (client ? makeEngineSource(client as EngineLike) : null),
@@ -4412,6 +4418,19 @@ describe('App', () => {
 > requirement (the board still plays) is verified properly there.
 
 - [ ] **Step 4: Run to verify failure, then write `App.tsx`**
+
+> **Amended during execution of Task 3.** `EngineClient.dispose()` is now
+> **terminal**: after disposal no code path may construct a new worker, and every
+> outstanding promise rejects with `EngineError('disposed')`. A disposed client is
+> single-use and must never be reused or re-registered. That makes the original
+> `useRef`-constructed hook below wrong under StrictMode — the ref would hand back
+> a dead client on the second effect run — so the hook now constructs the client
+> inside the effect and holds it in state, as shown above.
+>
+> `EngineStatus` has no `'disposed'` member, and a disposed client's `status`
+> reads `'idle'`. If the `EngineStatus` badge must distinguish "gone" from
+> "fresh", the hook has to track disposal itself; a public `disposed` getter on
+> the client would be the cleaner fix and is worth adding before this task.
 
 Run: `npx vitest run src/App.test.tsx` → FAIL.
 
