@@ -2926,10 +2926,24 @@ import { displaySquares, squareColor } from './squares';
 
 describe('squareColor', () => {
   it('gets the colours right', () => {
-    expect(squareColor('a1')).toBe('light');
-    expect(squareColor('h1')).toBe('dark');
-    expect(squareColor('a8')).toBe('dark');
+    // Standard chess: a1 is DARK and h1 (bottom-right) is LIGHT — "lighter on
+    // the right" — and each side's queen starts on her own colour (d1 light,
+    // d8 dark). These literals are the fallback; the load-bearing assertion is
+    // the anchor below, which ties the convention to the rules library.
+    expect(squareColor('a1')).toBe('dark');
+    expect(squareColor('h1')).toBe('light');
+    expect(squareColor('a8')).toBe('light');
     expect(squareColor('e4')).toBe('light');
+  });
+
+  it('matches the colour the rules library calls light, for all 64 squares', () => {
+    const rules = new Chess();
+    for (const file of FILES) {
+      for (const rank of RANKS) {
+        const square = `${file}${rank}`;
+        expect(squareColor(square), square).toBe(rules.squareColor(square));
+      }
+    }
   });
 });
 
@@ -2972,9 +2986,12 @@ export const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const;
 export const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'] as const;
 
 export function squareColor(s: string): 'light' | 'dark' {
+  // a1 is DARK, h1 is LIGHT ("lighter on the right"), and each side's queen
+  // starts on her own colour. Anchored to chess.js's squareColor so the two
+  // cannot diverge.
   const file = s.charCodeAt(0) - 97;      // a=0
   const rank = Number(s[1]);              // '1'..'8'
-  return (file + rank) % 2 === 0 ? 'dark' : 'light';
+  return (file + rank) % 2 === 0 ? 'light' : 'dark';
 }
 
 export interface DisplaySquare {
