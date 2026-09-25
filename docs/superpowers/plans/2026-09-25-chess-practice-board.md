@@ -51,6 +51,17 @@ types and update this section rather than guessing.
 - **`localStorage` keys:** `chess.settings.v1` and `chess.game.v1`. The game is
   stored as a **move list**, never a bare FEN. All reads must tolerate corrupt,
   wrong-version and wrong-shaped values by discarding them and starting fresh.
+- **The engine's play is STOCHASTIC below Skill Level 20.** At Medium (8), six
+  identical searches from the start position produced `e2e4 d2d4 e2e4 e2e4 g1f3
+  g1f3` — roughly 1 run in 3 falls outside `{e2e4, d2d4}`. No test may assert a
+  specific engine move, or that a specific position is reached. Assert on the
+  player's own moves, on counts, or on membership in a legal move set.
+- **The engine must be constructed with the DEFAULT `workerUrl`.** Task 4's
+  production-build gate proves a production-bundled `EngineClient` loads the
+  engine from `dist/`; it will not notice a custom `workerUrl`, and it will not
+  notice deployment under a sub-path unless Vite's `base` is set.
+- **`public/engine/` is reserved for the generated pair.** `copy-engine.mjs`
+  clears it on every build, so a hand-written asset placed there is deleted.
 - **Licence:** the Stockfish binary is GPL-3.0. Do not vendor or modify its source.
   Do not add a `LICENSE`-incompatible notice for it in this repo's own source files.
 - **Commit after every task** with a conventional-commit message. Never commit
