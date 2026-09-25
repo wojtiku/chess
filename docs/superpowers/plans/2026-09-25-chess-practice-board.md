@@ -4203,9 +4203,12 @@ export function useGame(): GameApi {
 
   // Persist the move list on every change; a failed write is a no-op.
   useEffect(() => {
-    if (snapshot.moves.length === 0) clearGame();
-    else saveGame(snapshot.moves.map(({ from, to, promotion }) => ({ from, to, promotion })));
-  }, [snapshot.moves]);
+    if (snapshot.moves.length === 0 && snapshot.resignedBy === null) clearGame();
+    else saveGame({
+      moves: snapshot.moves.map(({ from, to, promotion }) => ({ from, to, promotion })),
+      resignedBy: snapshot.resignedBy ?? undefined,
+    });
+  }, [snapshot.moves, snapshot.resignedBy]);
 
   useEffect(() => { saveSettings(settings); }, [settings]);
 
@@ -4307,11 +4310,16 @@ export function useGame(): GameApi {
 
 function hydrate(): GameSnapshot {
   const stored = loadGame();
-  if (!stored || stored.moves.length === 0) return initialState();
-  return stored.moves.reduce(
+  if (!stored) return initialState();
+  // Replay first, then apply the stored resignation. The early return on an
+  // empty move list that this replaced was WRONG: a learner may resign before
+  // playing a single move, and `resign` does not touch `moves`, so an
+  // empty-but-resigned game must still come back resigned.
+  const replayed = stored.moves.reduce(
     (s, m) => reduce(s, { type: 'play', move: { from: m.from, to: m.to, promotion: m.promotion, san: '' } }),
     initialState(),
   );
+  return stored.resignedBy ? reduce(replayed, { type: 'resign' }) : replayed;
 }
 ```
 
@@ -4728,6 +4736,19 @@ test('the game survives a reload', async ({ page }) => {
 
   await page.reload();
   await expect(page.locator('.movelist')).toContainText('d4', { timeout: 30_000 });
+});
+
+test('a resigned game stays resigned across a reload', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /Resign/ }).click();
+  await expect(page.getByText(/Resigned — Black wins/)).toBeVisible();
+
+  await page.reload();
+  // The banner must survive, AND the engine must not reply: a resignation sets
+  // status without touching `moves`, so without `resignedBy` in storage the game
+  // reopens as playable and Stockfish keeps playing a game already lost.
+  await expect(page.getByText(/Resigned — Black wins/)).toBeVisible();
+  await expect(page.locator('.movelist')).toContainText('No moves yet');
 });
 
 test('the board is keyboard navigable', async ({ page }) => {
