@@ -98,7 +98,9 @@ src/
 
 **Dependency direction is strictly one-way:**
 `ui/` → `game/` → `analysis/` → `engine/` → `chess/rules.ts`.
-`ui/` never imports from `engine/`. `chess/rules.ts` imports nothing from this app.
+`ui/` never imports from `engine/` **at runtime**. A type-only import of the
+engine's status union is permitted and erased at build time; it carries no
+coupling. `chess/rules.ts` imports nothing from this app.
 
 ### Interfaces
 

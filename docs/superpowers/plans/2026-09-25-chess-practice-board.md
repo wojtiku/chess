@@ -4468,6 +4468,23 @@ describe('App', () => {
 > "fresh", the hook has to track disposal itself; a public `disposed` getter on
 > the client would be the cleaner fix and is worth adding before this task.
 
+> **Amended during execution of Task 9.** `EvalBar`'s props changed: it now
+> takes `sideToMoveCp` / `sideToMoveMate` plus a **required** `sideToMove`, and
+> converts to a White-relative score in one tested function. The inline
+> `whiteCp`/`whiteMate` ternary that used to live here is deleted above, not
+> ported — it was a per-render sign flip, which is the bug the required
+> `sideToMove` exists to prevent.
+>
+> `Captured` must be given the **replay-built** `Chess` (`g.game`), never a FEN:
+> it reads `move.captured` from the move history, so a bare-FEN game renders a
+> permanently empty "captured" list with no error. This is documented on the prop
+> in Task 9's code.
+>
+> Known for Task 11: the glyph table is now in three places — `Board/pieces.ts`,
+> `PromotionPicker.tsx` and `Captured.tsx` — and **`PromotionPicker.tsx` has no
+> test file**, so its four glyphs are the one copy nothing pins. Task 11 vendors
+> SVGs and should collapse all three to one source.
+
 Run: `npx vitest run src/App.test.tsx` → FAIL.
 
 ```tsx
@@ -4491,13 +4508,11 @@ export default function App() {
     document.documentElement.dataset.theme = g.settings.theme;
   }, [g.settings.theme]);
 
-  // Engine scores are from the side to move; the bar shows White's advantage.
-  const whiteCp = g.analysis
-    ? g.game.turn() === 'w' ? g.analysis.scoreCp : g.analysis.scoreCp === undefined ? undefined : -g.analysis.scoreCp
-    : undefined;
-  const whiteMate = g.analysis?.scoreMate === undefined
-    ? undefined
-    : g.game.turn() === 'w' ? g.analysis.scoreMate : -g.analysis.scoreMate;
+  // DELIBERATELY NO SIGN FLIP HERE. The engine's score is from the side to
+  // move, and `EvalBar` now takes `sideToMove` and converts once, in one tested
+  // function. The ternary this replaces was a per-render inline flip — the exact
+  // failure mode the conversion was introduced to eliminate — so do not restore
+  // it, and do not "fix" a type error by keeping it.
 
   const lastMove = g.snapshot.cursor > 0
     ? (() => { const m = g.snapshot.moves[g.snapshot.cursor - 1]!; return { from: m.from, to: m.to }; })()
@@ -4514,7 +4529,12 @@ export default function App() {
 
       <div className="app-main">
         <div className="app-board">
-          <EvalBar scoreCp={whiteCp} scoreMate={whiteMate} orientation={g.settings.orientation} />
+          <EvalBar
+            sideToMoveCp={g.analysis?.scoreCp}
+            sideToMoveMate={g.analysis?.scoreMate}
+            sideToMove={g.game.turn()}
+            orientation={g.settings.orientation}
+          />
           <Board
             game={g.game}
             orientation={g.settings.orientation}
