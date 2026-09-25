@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { Chess } from 'chess.js';
-import { legalMoves, statusOf } from '../chess/rules';
+import { legalMoves, newGame, statusOf } from '../chess/rules';
+import type { GameStatus } from '../chess/types';
 import {
-  gameAt, initialState, isReviewing, reduce,
+  gameAt, initialState, isGameOver, isReviewing, reduce,
   type GameAction, type GameSnapshot,
 } from './gameState';
 
@@ -18,12 +18,17 @@ const uciList = (ucis: string[], from = initialState()) => run(ucis.map(uci), fr
 /** SAN of the last recorded move, or null if there is none. */
 const sanAfter = (s: GameSnapshot): string | null => s.moves.at(-1)?.san ?? null;
 
-/** A real 109-ply game from the start position that never repeats a position and
+/** A real 108-ply game from the start position that never repeats a position and
  * never moves a pawn or makes a capture after ply 8, so the halfmove clock
- * reaches 101. It is the only way to drive the reducer to a fifty-move draw:
- * see the test at the bottom of this file. Verified by execution — the final
- * position is `r2qkb1r/1ppbpppp/p1n2n2/1B1p4/4P3/5N2/PPPP1PPP/RNBQK2R b KQ - 101 55`
- * with `isThreefoldRepetition() === false` and `isDrawByFiftyMoves() === true`. */
+ * reaches exactly 100 and the fifty-move rule fires. It is the only way to drive
+ * the reducer to a fifty-move draw: see the test at the bottom of this file.
+ * Verified by execution — the final position is
+ * `r2qkb1r/1ppbpppp/p1n2n2/3p4/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQ - 100 55` with
+ * `isThreefoldRepetition() === false` and `isDrawByFiftyMoves() === true`.
+ *
+ * The 109th ply of this tour (`c4b5`) is deliberately absent: a 109th ply would
+ * be legal chess, but the clock is already at 100 after 108, so the game is
+ * over and the reducer refuses it. */
 const FIFTY_MOVE_TOUR = [
   // 1.e4 Nf6 2.Nf3 Nc6 3.Bb5 a6 4.Ba4 d5 — the last pawn move; the clock starts here.
   'e2e4', 'g8f6', 'g1f3', 'b8c6', 'f1b5', 'a7a6', 'b5a4', 'd7d5',
@@ -54,7 +59,6 @@ const FIFTY_MOVE_TOUR = [
   'c4b5', 'c8a8', 'b5c4', 'a8b8',
   'c4b5', 'b8c8', 'b5c4', 'g8h8',
   'c4b5', 'c8b8', 'b5c4', 'b8a8',
-  'c4b5',
 ] as const;
 
 describe('reduce: playing', () => {
@@ -171,15 +175,44 @@ describe('reduce: playing', () => {
     expect(s.resignedBy).toBe('w');
   });
 
-  it('playing after a resignation clears it', () => {
+  it('a resignation is terminal: a further move is refused', () => {
+    // The learner has given up, so the board is no longer playable. `legalMoves`
+    // shows e4 is perfectly legal here, so this refusal is the reducer's rule
+    // and not chess.js rejecting an impossible move.
     const resigned = run([{ type: 'resign' }]);
-    const s = reduce(resigned, uci('e2e4'));
-    expect(s.resignedBy).toBeNull();
-    expect(s.status).toEqual({ kind: 'playing', check: false });
+    expect(legalMoves(gameAt(resigned))).toContain('e4');
+    expect(reduce(resigned, uci('e2e4'))).toBe(resigned);
+    expect(reduce(resigned, { type: 'play', move: { from: 'e2', to: 'e4', san: '' } })).toBe(resigned);
+  });
+
+  it('playing from a rewound cursor is still allowed, and abandons a resignation', () => {
+    // The guard is on the position being played *from*, and a resignation blocks
+    // only the live game. Rewinding to 0 and playing rewrites history, so this
+    // is a new game: the old resignation no longer applies, exactly as it does
+    // not survive an `undo`.
+    const resigned = run([uci('e2e4'), uci('e7e5'), { type: 'resign' }]);
+    expect(resigned.status).toEqual({ kind: 'resigned', winner: 'b' });
+    expect(reduce(resigned, uci('g1f3'))).toBe(resigned); // live: refused
+    const branched = reduce(reduce(resigned, { type: 'goto', cursor: 0 }), uci('d2d4'));
+    expect(branched.moves.map((m) => m.san)).toEqual(['d4']);
+    expect(branched.cursor).toBe(1);
+    expect(branched.status).toEqual({ kind: 'playing', check: false });
+    expect(branched.resignedBy).toBeNull();
+  });
+
+  it('a resignation is terminal even when the cursor is stale', () => {
+    // Corrupt storage can pair a resignation with a cursor beyond the move
+    // list. The game is still over, so the move must be refused — which is why
+    // the live check is `cursor >= moves.length` and not `===`.
+    const stale: GameSnapshot = {
+      moves: [], cursor: 3, status: { kind: 'resigned', winner: 'b' }, resignedBy: 'w',
+    };
+    expect(reduce(stale, uci('e2e4'))).toBe(stale);
   });
 
   it('taking back after a resignation clears it too', () => {
-    // Same policy as `play`: once there is a game again, there is no resignation.
+    // Rewinding is the escape hatch from a finished game, and a resignation
+    // recomputes like any other status.
     const resigned = run([uci('e2e4'), uci('e7e5'), { type: 'resign' }]);
     expect(resigned.resignedBy).toBe('w');
     expect(resigned.status).toEqual({ kind: 'resigned', winner: 'b' });
@@ -210,6 +243,78 @@ describe('reduce: playing', () => {
     expect(reduce(at, uci('b7c8k'))).toBe(at);  // a king is not a promotable piece
     // ...while underpromotion is legal and is recorded as such.
     expect(sanAfter(reduce(at, uci('b7c8n')))).toBe('bxc8=N');
+  });
+});
+
+describe('a finished game is terminal', () => {
+  // chess.js enforces two of the six ways a game ends, by itself: a mated or
+  // stalemated position has no legal move, so nothing can be played onto it.
+  // Threefold, the fifty-move rule and insufficient material are draw *states*,
+  // not move prohibitions — the moves that reach them are perfectly legal and
+  // the moves after them are too. So a repetition or a saturated halfmove clock
+  // must be refused by the reducer, or a pawn push resets the clock, the draw
+  // banner disappears and the learner keeps playing a game the rules have
+  // ended.
+  it('a threefold draw is terminal: a further move is refused', () => {
+    let s = initialState();
+    for (let i = 0; i < 2; i++) {
+      s = run([uci('g1f3'), uci('g8f6'), uci('f3g1'), uci('f6g8')], s);
+    }
+    expect(s.status).toEqual({ kind: 'threefold' });
+    // d4 is legal here, so the refusal is the reducer's rule and not chess.js.
+    expect(legalMoves(gameAt(s))).toContain('d4');
+    expect(reduce(s, uci('d2d4'))).toBe(s);
+    // Nothing about the draw moved: still 8 plies, clock still 8, still drawn.
+    expect(s.moves).toHaveLength(8);
+    expect(s.status).toEqual({ kind: 'threefold' });
+    expect(gameAt(s).fen().split(' ')[4]).toBe('8');
+  });
+
+  it('a fifty-move draw is terminal: a further move is refused', () => {
+    const s = uciList([...FIFTY_MOVE_TOUR]);
+    expect(s.status).toEqual({ kind: 'fiftyMove' });
+    // A pawn push and a capture are the two moves that dissolve a fifty-move
+    // draw: both reset the halfmove clock to 0, and the next position is not a
+    // repetition either, so the draw would silently become `playing`.
+    expect(legalMoves(gameAt(s))).toContain('d4');
+    expect(legalMoves(gameAt(s))).toContain('Bxd5');
+    expect(reduce(s, uci('d2d4'))).toBe(s);
+    expect(reduce(s, uci('c4d5'))).toBe(s);
+    // Nothing about the draw moved.
+    expect(s.moves).toHaveLength(FIFTY_MOVE_TOUR.length);
+    expect(gameAt(s).fen().split(' ')[4]).toBe('100');
+    expect(s.status).toEqual({ kind: 'fiftyMove' });
+  });
+
+  it('isGameOver names every way a game can end, and nothing else', () => {
+    // The two kinds chess.js refuses on its own are included anyway, so the rule
+    // does not depend on which of the six happen to be self-enforcing.
+    const over: GameStatus[] = [
+      { kind: 'checkmate', winner: 'w' },
+      { kind: 'stalemate' },
+      { kind: 'threefold' },
+      { kind: 'fiftyMove' },
+      { kind: 'insufficientMaterial' },
+      { kind: 'resigned', winner: 'b' },
+    ];
+    for (const status of over) {
+      expect(isGameOver(status)).toBe(true);
+    }
+    expect(isGameOver({ kind: 'playing', check: false })).toBe(false);
+    expect(isGameOver({ kind: 'playing', check: true })).toBe(false);
+  });
+
+  it('rewinding is the way out of a finished game', () => {
+    let s = initialState();
+    for (let i = 0; i < 2; i++) {
+      s = run([uci('g1f3'), uci('g8f6'), uci('f3g1'), uci('f6g8')], s);
+    }
+    const undone = reduce(s, { type: 'undo' });
+    expect(undone.moves).toHaveLength(6);
+    expect(undone.cursor).toBe(6);
+    expect(undone.status).toEqual({ kind: 'playing', check: false });
+    // ...and the game is playable again.
+    expect(reduce(undone, uci('f3g1'))).not.toBe(undone);
   });
 });
 
@@ -422,20 +527,43 @@ describe('gameAt', () => {
     expect(s.status).toEqual({ kind: 'playing', check: false });
   });
 
+  it('clamps a cursor beyond the move list instead of throwing', () => {
+    // `GameSnapshot` is a public data shape and the plan persists the game as a
+    // bare move list, so a deserialised or hand-edited snapshot can carry a
+    // stale cursor. `gameAt` is called on the way to *rendering*, so it must
+    // degrade to the longest playable prefix rather than throw.
+    const stale: GameSnapshot = {
+      moves: [], cursor: 3, status: { kind: 'playing', check: false }, resignedBy: null,
+    };
+    expect(gameAt(stale).fen()).toBe(START_FEN);
+    const game = run([uci('e2e4'), uci('e7e5')]);
+    expect(gameAt({ ...game, cursor: 99 }).fen()).toBe(gameAt(game).fen());
+  });
+
+  it('clamps a negative cursor to the start', () => {
+    const game = run([uci('e2e4'), uci('e7e5')]);
+    expect(gameAt({ ...game, cursor: -4 }).fen()).toBe(START_FEN);
+  });
+
   it('a fifty-move status is distinguishable from threefold', () => {
-    // The reducer's `status` is a plain data field, so a snapshot carrying
-    // `fiftyMove` is constructible — but driving the reducer there needs 100
-    // halfmoves, which is asserted at the bottom of this file. What this pins is
-    // the boundary: the same position one halfmove short is NOT a fifty-move
-    // draw, so the `fiftyMove` kind cannot be produced by a sloppy threshold.
-    const at100 = new Chess('8/8/8/4k3/8/8/4P3/4K3 w - - 100 60');
-    const at99 = new Chess('8/8/8/4k3/8/8/4P3/4K3 w - - 99 60');
+    // This half pins the *boundary* in the rules layer: the same position one
+    // halfmove short is not a fifty-move draw. The reducer deriving `fiftyMove`
+    // from a real game is asserted at the bottom of this file, which is the
+    // assertion that matters.
+    const at100 = newGame();
+    at100.load('8/8/8/4k3/8/8/4P3/4K3 w - - 100 60');
+    const at99 = newGame();
+    at99.load('8/8/8/4k3/8/8/4P3/4K3 w - - 99 60');
     expect(statusOf(at100)).toEqual({ kind: 'fiftyMove' });
     expect(statusOf(at99).kind).not.toBe('fiftyMove');
-    const s: GameSnapshot = {
-      moves: [], cursor: 0, status: statusOf(at100), resignedBy: null,
+    // A hand-built snapshot is still a usable snapshot: the module's derived
+    // values must not depend on how the snapshot was made.
+    const handBuilt: GameSnapshot = {
+      moves: [], cursor: 0, status: { kind: 'fiftyMove' }, resignedBy: null,
     };
-    expect(s.status).toEqual({ kind: 'fiftyMove' });
+    expect(isGameOver(handBuilt.status)).toBe(true);
+    expect(isReviewing(handBuilt)).toBe(false);
+    expect(gameAt(handBuilt).fen()).toBe(START_FEN);
   });
 
   it('a threefold draw reached by real play is reported as threefold', () => {
@@ -449,13 +577,17 @@ describe('gameAt', () => {
     expect(gameAt(s).fen().split(' ')[4]).toBe('8');
   });
 
-  it('a fifty-move draw reached by real play is reported as fiftyMove, not threefold', () => {
+  it('a fifty-move draw reached by real play is reported as fiftyMove', () => {
     const s = uciList([...FIFTY_MOVE_TOUR]);
     expect(s.moves).toHaveLength(FIFTY_MOVE_TOUR.length);
     // Pin the facts that make this a fifty-move draw and not a repetition: the
-    // halfmove clock is past 100 and no position occurred three times.
+    // halfmove clock has reached 100 and no position occurred three times. Note
+    // this does NOT discriminate the precedence between the two — `statusOf`
+    // is the thing that decides, and both facts holding false/true is only
+    // consistent with it. See `src/chess/rules.test.ts` for the assertion that
+    // actually discriminates, where both hold at once.
     const g = gameAt(s);
-    expect(g.fen().split(' ')[4]).toBe('101');
+    expect(g.fen().split(' ')[4]).toBe('100');
     expect(g.isThreefoldRepetition()).toBe(false);
     expect(g.isDrawByFiftyMoves()).toBe(true);
     expect(s.status).toEqual({ kind: 'fiftyMove' });
