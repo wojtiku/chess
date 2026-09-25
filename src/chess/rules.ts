@@ -1,15 +1,19 @@
 import { Chess } from 'chess.js';
-import type { Move as ChessMove, PieceSymbol, Square as ChessSquare } from 'chess.js';
+import type { Move as ChessMove, Square as ChessSquare } from 'chess.js';
 import type { GameStatus, Move, Square } from './types';
 
 export { Chess };
 export type { GameStatus, Move, Square } from './types';
 
+const PROMOTION_PIECES = ['q', 'r', 'b', 'n'] as const;
+
 // chess.js types `square` as a 64-value union and `promotion` as a full
-// PieceSymbol. Our `Square` is a plain string and our `promotion` is the four
-// promotable pieces, so both are narrowed here at the library boundary.
-function toPromotion(piece: PieceSymbol | undefined): Move['promotion'] {
-  return piece === 'q' || piece === 'r' || piece === 'b' || piece === 'n' ? piece : undefined;
+// PieceSymbol, while this module's `Square` is a plain string and its
+// `promotion` is the four promotable pieces. Both are narrowed here, at the
+// library boundary. The character is checked rather than cast, because
+// `uciToMove` feeds this from untrusted engine PV lines.
+function parsePromotion(piece: string | undefined): Move['promotion'] {
+  return PROMOTION_PIECES.find((p) => p === piece);
 }
 
 export function newGame(): Chess {
@@ -17,11 +21,11 @@ export function newGame(): Chess {
 }
 
 export function legalMoves(game: Chess, from?: Square): string[] {
-  return from ? game.moves({ square: from as ChessSquare }) : game.moves();
+  return from !== undefined ? game.moves({ square: from as ChessSquare }) : game.moves();
 }
 
 export function legalMovesVerbose(game: Chess, from?: Square): ChessMove[] {
-  return from
+  return from !== undefined
     ? game.moves({ square: from as ChessSquare, verbose: true })
     : game.moves({ verbose: true });
 }
@@ -31,7 +35,7 @@ export function applyMove(game: Chess, m: Move): Move {
   return {
     from: applied.from,
     to: applied.to,
-    promotion: toPromotion(applied.promotion),
+    promotion: parsePromotion(applied.promotion),
     san: applied.san,
   };
 }
@@ -67,11 +71,11 @@ export function fenOf(game: Chess): string {
 export function uciToMove(uci: string): Move {
   const from = uci.slice(0, 2);
   const to = uci.slice(2, 4);
-  const promo = uci[4];
+  const promotion = parsePromotion(uci[4]);
   return {
     from,
     to,
-    ...(promo ? { promotion: promo as Move['promotion'] } : {}),
+    ...(promotion ? { promotion } : {}),
     san: '',
   };
 }

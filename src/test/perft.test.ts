@@ -21,19 +21,40 @@ const CASES: Array<[string, string | undefined, number[]]> = [
 ];
 
 const full = process.env.PERFT_FULL === '1';
-// Default suite omits the two ~7-12s depths; `npm run perft:full` includes them.
+// Default suite omits the three ~7-13s depths; `npm run perft:full` includes them.
 const DEFAULT_MAX_DEPTH: Record<string, number> = {
   startpos: 3, kiwipete: 2, pos3: 4, pos4: 3, pos5: 2,
 };
+// The three gated depths take 7-13s each, well over vitest's 5s default
+// `testTimeout`, so `npm run perft:full` cannot pass without an explicit
+// budget. It is set here rather than in vitest.config.ts to keep the relaxation
+// scoped to this file and to leave the default suite's failures fast.
+const PERFT_TIMEOUT_MS = 120_000;
 
 describe('perft', () => {
+  // A misspelled position name would make `DEFAULT_MAX_DEPTH[name]` undefined,
+  // the `depth <= max` loop would emit zero tests, and the suite would still go
+  // green — silently losing that position's perft coverage. This test is the
+  // guard against that, and `max` falls back to the full depth list on a miss.
+  it('every perft position declares a default depth within its known counts', () => {
+    for (const [name, , expected] of CASES) {
+      const max = DEFAULT_MAX_DEPTH[name];
+      expect(
+        max,
+        `no DEFAULT_MAX_DEPTH entry for '${name}' — its perft depths would be skipped silently`,
+      ).toBeDefined();
+      expect(max!).toBeGreaterThan(0);
+      expect(max!).toBeLessThanOrEqual(expected.length);
+    }
+  });
+
   for (const [name, fen, expected] of CASES) {
-    const max = full ? expected.length : DEFAULT_MAX_DEPTH[name]!;
+    const max = full ? expected.length : (DEFAULT_MAX_DEPTH[name] ?? expected.length);
     for (let depth = 1; depth <= max; depth++) {
       it(`${name} depth ${depth} = ${expected[depth - 1]}`, () => {
         const game = fen ? new Chess(fen) : new Chess();
         expect(perft(game, depth)).toBe(expected[depth - 1]);
-      });
+      }, PERFT_TIMEOUT_MS);
     }
   }
 });

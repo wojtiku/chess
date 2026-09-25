@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "description": "A browser chess practice board: play White against a computer opponent and review your games.",
   "scripts": {
     "dev": "vite",
