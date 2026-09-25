@@ -55,6 +55,12 @@ types and update this section rather than guessing.
   Do not add a `LICENSE`-incompatible notice for it in this repo's own source files.
 - **Commit after every task** with a conventional-commit message. Never commit
   `public/engine/`, `node_modules/`, or `dist/`.
+- **`@types/node` is installed**, so Node's `NodeJS.Timeout` overloads merge into a
+  program whose `lib` is `[DOM, WebWorker]`. Type every timer handle as
+  `ReturnType<typeof setTimeout>`, never `number`.
+- **`applyMove` always emits a `promotion` key** (possibly `undefined`) while
+  `uciToMove` omits the key entirely. Both shapes coexist. Compare moves with
+  `toEqual` / `toMatchObject`, never `toStrictEqual`.
 
 ### Reference fixtures (verified against chess.js 1.4.0)
 
@@ -105,7 +111,6 @@ chess/
 ├── vite.config.ts
 ├── vitest.config.ts
 ├── tsconfig.json
-├── tsconfig.node.json
 ├── playwright.config.ts
 ├── scripts/
 │   └── copy-engine.mjs              build step: stockfish bin/ -> public/engine/
@@ -163,8 +168,18 @@ Dependency direction is strictly `ui/ -> game/ -> analysis/ -> engine/ -> chess/
 ## Task 1: Scaffold, rules layer, and perft guard
 
 **Files:**
-- Create: `package.json`, `vite.config.ts`, `vitest.config.ts`, `tsconfig.json`, `tsconfig.node.json`, `index.html`, `src/main.tsx`, `src/chess/types.ts`, `src/chess/rules.ts`, `src/chess/rules.test.ts`, `src/test/setup.ts`, `src/test/perft.test.ts`
+- Create: `package.json`, `vite.config.ts`, `vitest.config.ts`, `tsconfig.json`, `index.html`, `src/main.tsx`, `src/vite-env.d.ts`, `src/chess/types.ts`, `src/chess/rules.ts`, `src/chess/rules.test.ts`, `src/test/rules-wrapper.test.ts`, `src/test/setup.ts`, `src/test/perft.test.ts`
 - Create: `src/App.tsx` (placeholder — a heading and the FEN, replaced in Task 10)
+
+> **Amended during execution of Task 1.** `tsconfig.node.json` was specified here
+> but is **not created**: it has no `references` and no `composite`, so `tsc -b`
+> ignores it, and `tsconfig.json` already includes `vite.config.ts`,
+> `vitest.config.ts` and `playwright.config.ts`. Creating it would be a second,
+> unowned, drifting copy of coverage. `src/vite-env.d.ts` **is** created — it is
+> required for the CSS import in `main.tsx` to typecheck.
+> `src/test/rules-wrapper.test.ts` was **added during review**: the perft guard
+> imports `Chess` from `chess.js` directly, so without it `rules.ts` had zero
+> coverage and castling through `applyMove` was never tested.
 
 **Interfaces:**
 - Consumes: nothing (first task)
@@ -620,7 +635,7 @@ export function sanSequence(startFen: string, uciMoves: string[]): string[] {
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `npx vitest run src/chess/rules.test.ts`
-Expected: PASS (14 tests).
+Expected: PASS (27 tests in `rules.test.ts`; `rules-wrapper.test.ts` and the default perft suite bring the total to 50).
 
 - [ ] **Step 7: Write the perft guard test**
 
@@ -670,7 +685,7 @@ describe('perft', () => {
 - [ ] **Step 8: Run the perft guard**
 
 Run: `npx vitest run src/test/perft.test.ts`
-Expected: PASS (14 tests, ~4s).
+Expected: PASS (15 perft tests, ~4s). The full `npm run perft:full` adds 3 more depths (18 total) and needs a raised per-test timeout — vitest's 5s default kills startpos d4 and kiwipete d3.
 
 - [ ] **Step 9: Verify the dev server and typecheck both work**
 
