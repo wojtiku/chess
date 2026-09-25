@@ -525,6 +525,28 @@ describe('sanSequence', () => {
 });
 ```
 
+> **Amended during execution of Task 2.** There is no `uci-types.ts`: this
+> brief contradicted itself (Files list, Interfaces block and the File Structure
+> tree all say `uci.ts`; only Step 3's import line said `./uci-types`), and nothing
+> outside this task imports it. The types live in `uci.ts` and the public surface
+> is unchanged.
+>
+> The implementer also found **six real defects in the parser code specified
+> below**, none of which the brief's own 16 tests could detect, and fixed them:
+>
+> 1. `bestmove e2e4 ponder e7e5` yielded `move: 'ponder'` — a truncated line
+>    injected a non-move token as the move. `move` must be regex-validated, not
+>    merely read positionally.
+> 2. `startsWith('info')` matched the word `information`, turning it into a
+>    depth-0 search update. The token must be matched exactly.
+> 3-6. Three truncated-line cases left keys present-and-`undefined`, which
+>    `toEqual` cannot see. The parser must omit absent keys entirely.
+>
+> Two more consequences for Task 3: an `info string ...` line parses as
+> `{type:'info', depth:0, pv:[]}`, so the consumer must filter on
+> `pv.length > 0` rather than on event type; and when both `cp` and `mate` are
+> present, prefer `mate`.
+
 - [ ] **Step 4: Run the tests to verify they fail**
 
 Run: `npx vitest run src/chess/rules.test.ts`
@@ -860,9 +882,23 @@ Expected: FAIL — `Cannot find module './uci'`.
 - [ ] **Step 3: Write `src/engine/uci.ts`**
 
 ```ts
-import type { UciEvent, UciInfo } from './uci-types';
+export interface UciInfo {
+  type: 'info';
+  depth: number;
+  selDepth?: number;
+  multiPv: number;
+  scoreCp?: number;
+  scoreMate?: number;
+  bound?: 'lower' | 'upper';
+  pv: string[];
+}
 
-export type { UciEvent, UciInfo } from './uci-types';
+export type UciEvent =
+  | { type: 'uciok' }
+  | { type: 'readyok' }
+  | { type: 'bestmove'; move: string | null; ponder?: string }
+  | UciInfo
+  | { type: 'other'; line: string };
 
 export function isReliableScore(e: UciInfo): boolean {
   return e.bound === undefined;
@@ -929,26 +965,6 @@ export const cmd = {
 };
 ```
 
-`src/engine/uci-types.ts`:
-```ts
-export interface UciInfo {
-  type: 'info';
-  depth: number;
-  selDepth?: number;
-  multiPv: number;
-  scoreCp?: number;
-  scoreMate?: number;
-  bound?: 'lower' | 'upper';
-  pv: string[];
-}
-
-export type UciEvent =
-  | { type: 'uciok' }
-  | { type: 'readyok' }
-  | { type: 'bestmove'; move: string | null; ponder?: string }
-  | UciInfo
-  | { type: 'other'; line: string };
-```
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
