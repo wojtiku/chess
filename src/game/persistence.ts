@@ -22,7 +22,9 @@
 // the key, `chess.settings.v1` / `chess.game.v1`, so a future build reads a new
 // key and an old one is left where it is rather than guessed at.
 
-import { newGame, tryApplyMove } from '../chess/rules';
+import { newGame, statusOf, tryApplyMove, type Chess } from '../chess/rules';
+import type { Side } from '../chess/types';
+import { isGameOver } from './gameState';
 import { DEFAULT_SETTINGS, clampMinThink, clampSkill, type Settings } from './difficulty';
 import type { HintMode, ThemeName } from './difficulty-types';
 
@@ -41,6 +43,15 @@ export interface StoredMove {
 
 export interface StoredGame {
   moves: StoredMove[];
+  /** The side that resigned, or absent if the game is still being played.
+   *
+   * A move list cannot express a resignation — `resign` sets the status without
+   * touching `moves` — so without this field a resigned game reopens on reload
+   * as rule-derived `playing`, the result banner is gone, and the
+   * opponent-reply effect takes another move in a game the learner has already
+   * given up. Optional, so a payload written before it existed still loads and
+   * the wire format of an unresigned game is byte-for-byte unchanged. */
+  resignedBy?: Side;
 }
 
 // The `localStorage` access is inside the guard, not just the method call: in an
@@ -166,32 +177,69 @@ export function saveSettings(settings: Settings): void {
 }
 
 /**
- * Whether the whole list can be played from the starting position.
+ * The position a stored list replays to, or `null` if the list is not a game
+ * this app could have played.
  *
- * This is the only real check on a stored game. Type-checking each move (see
+ * This is the only real check on a stored game, and it has two halves, because
+ * "could not have been played" has two meanings.
+ *
+ * **The move is not playable here.** Type-checking each move (see
  * `isStoredMove`) is not enough: `{from: 'e2', to: 'e5'}` is a perfectly
  * well-typed move that no game can contain, and Task 5's `replay` throws on it
  * — `gameAt` is on the way to rendering, so that throw would be a blank app.
+ * `tryApplyMove` also rejects a move played for the side that is not to move,
+ * because chess.js only matches against moves generated for that side.
+ *
+ * **The game is already over, and the list walks past it.** This half is not
+ * optional, and the reason is specific: **chess.js has no game-over guard.**
+ * `move()` throws only when the legal-move generator comes back empty. Measured,
+ * for each ending that is reachable from the start position in a test-sized
+ * game, with a probe move that is legal chess in the position:
+ *
+ * ```
+ * checkmate   isGameOver=true   probe refused    (the generator is empty)
+ * threefold   isGameOver=true   probe ACCEPTED   <-- the hole
+ * fiftyMove   isGameOver=true   probe ACCEPTED   <-- the hole
+ * ```
+ *
+ * A stalemate behaves like a mate here — no legal moves — so it was never the
+ * hole. Insufficient material is the third hole, and neither it nor a
+ * stalemate has a cheap fixture from the start position: K+B against K needs 30
+ * captures, and a breadth-first search to depth 5 does not reach a stalemate
+ * (it ran the heap out first). Those two are covered by asking `isGameOver`
+ * rather than testing for a mate, and that predicate is pinned exhaustive over
+ * the `GameStatus` union in `persistence.test.ts`, so a seventh kind cannot
+ * appear without this gate being revisited.
+ *
+ * So a list that walks past a draw is, ply by ply, a legal sequence of
+ * positions, and without this half it is accepted. The consequence was measured
+ * end to end: `THREEFOLD + b1c3` (9 plies) loaded, and `hydrate` then reduced it
+ * to 8, because the reducer's `play` guard refuses to extend a finished game and
+ * the tail vanished. That is the half-applied game this whole policy exists to
+ * prevent, reached by a different route and therefore invisible.
+ *
+ * So the question asked at the top of each ply is the app's own — "has a game
+ * ended here?", which is `isGameOver` and deliberately not the library's — and
+ * it is asked by the same predicate the reducer uses to refuse a move, so the
+ * reader and the player can never disagree about where a game ends.
  *
  * The move built here is byte-for-byte the one Task 10's `hydrate` builds from
  * the same stored record, so what is validated and what is played cannot drift
  * apart.
  */
-function movesArePlayable(moves: readonly StoredMove[]): boolean {
+function replayStored(moves: readonly StoredMove[]): Chess | null {
   const game = newGame();
   for (const move of moves) {
-    // `tryApplyMove` never throws: it rejects a move that is illegal in this
-    // position *and* one played for the side that is not to move, because
-    // chess.js only matches against moves generated for the side to move.
+    if (isGameOver(statusOf(game))) return null;
     const applied = tryApplyMove(game, {
       from: move.from,
       to: move.to,
       promotion: move.promotion,
       san: '',
     });
-    if (!applied) return false;
+    if (!applied) return null;
   }
-  return true;
+  return game;
 }
 
 /**
@@ -206,9 +254,18 @@ function movesArePlayable(moves: readonly StoredMove[]): boolean {
  * one is neither, and the learner has no way to tell which they are looking at.
  *
  * The rule is about *moves that cannot be played*, not about games that are
- * over, so a list that ends exactly at a mate or a threefold repetition is
- * restored with its history intact, while a list that carries a move past a
- * finished game is discarded.
+ * over, so a list that ends exactly at a mate, a repetition or a fifty-move
+ * draw is restored with its history intact, while a list that carries a move
+ * past a finished game is discarded.
+ *
+ * A stored `resignedBy` is validated, not trusted: it must equal the side to
+ * move at the end of the replayed list, or the game is discarded. The check is
+ * free — the replay is already at the end and its turn is in hand — and
+ * `reduce`'s `resign` derives the loser from exactly that value, so a
+ * disagreement is provably not something this app wrote. It is corrupt data of
+ * the same kind as an unplayable move, and this file resolves corruption by
+ * discarding rather than by guessing. Guessing here would mean picking a winner
+ * for a game from two contradictory facts.
  */
 export function loadGame(): StoredGame | null {
   const stored = safeParse(safeGet(GAME_KEY));
@@ -218,13 +275,33 @@ export function loadGame(): StoredGame | null {
   // that `any` from escaping is the entire job of the next two lines.
   const candidates: readonly unknown[] = moves;
   if (!candidates.every(isStoredMove)) return null;
-  if (!movesArePlayable(candidates)) return null;
-  return { moves: [...candidates] };
+  const game = replayStored(candidates);
+  if (!game) return null;
+  const resignedBy: unknown = stored?.resignedBy;
+  // `undefined` is absence, and absence is the common case: a game that was not
+  // resigned.
+  if (resignedBy === undefined) return { moves: [...candidates] };
+  // One comparison, not a type check plus a comparison: the replayed turn is
+  // `'w' | 'b'`, so `resignedBy === turn` already rejects every value that is
+  // not a side — `'black'`, `1`, `null` and an object all fail it. Checking
+  // `isSide` first would be a guard that can never change the answer, and
+  // `game.turn()` is returned rather than the stored value so nothing here
+  // needs a cast or a narrowing helper.
+  const turn = game.turn();
+  if (resignedBy !== turn) return null;
+  return { moves: [...candidates], resignedBy: turn };
 }
 
-/** Stores a move list. Validation belongs on the read path, not here. */
-export function saveGame(moves: readonly StoredMove[]): void {
-  safeSet(GAME_KEY, JSON.stringify({ moves }));
+/** Stores a move list, and the resignation if the game ended in one.
+ *
+ * Validation belongs on the read path, not here: the only writer is the
+ * reducer, whose moves are legal by construction and whose `resignedBy` comes
+ * from the side to move. `resignedBy: undefined` is dropped by `JSON.stringify`,
+ * so an unresigned game is written exactly as it was before this parameter
+ * existed.
+ */
+export function saveGame(moves: readonly StoredMove[], resignedBy?: Side): void {
+  safeSet(GAME_KEY, JSON.stringify({ moves, resignedBy }));
 }
 
 /** Forgets the stored game, and only the stored game. */

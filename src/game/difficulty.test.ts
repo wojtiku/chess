@@ -85,6 +85,29 @@ describe('the default settings object', () => {
     });
   });
 
+  it('cannot be edited by a caller, so no default can be poisoned', () => {
+    // Every "fall back to the default" path in the project reads this object:
+    // `clampSkill(NaN)`, `clampMinThink(NaN)`, and `settingsFrom`'s five
+    // per-field fallbacks. One stray write would change all of them for the
+    // rest of the session, so the freeze is the invariant. `Object.isFrozen`
+    // alone would be satisfied by a freeze of some *other* object, hence the
+    // attempt as well.
+    expect(Object.isFrozen(DEFAULT_SETTINGS)).toBe(true);
+    let threw = false;
+    try {
+      // Typechecks: the annotation is the plan's `Settings`, so the guard is
+      // the runtime one. This is the deliberate trade — a published mutable type
+      // over a published frozen value.
+      DEFAULT_SETTINGS.skillLevel = 1;
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(true);
+    // The value is intact, so a failed write cannot leave a partial edit either.
+    expect(DEFAULT_SETTINGS.skillLevel).toBe(8);
+    expect(presetLabel(DEFAULT_SETTINGS.skillLevel)).toBe('Medium');
+  });
+
   it('is well-formed as a Settings: theme and hintMode are their own unions', () => {
     // Enforced by `tsc -b`, not by this run: a widened `Settings` would still
     // satisfy every runtime assertion in the file.
@@ -113,6 +136,19 @@ describe('the preset table', () => {
     const medium = PRESETS.find((p) => p.id === 'medium');
     expect(medium).toBeDefined();
     expect(presetFor(8)).toBe(medium);
+  });
+
+  it('has exactly the published element type, and no more', () => {
+    // Enforced by `tsc -b`, not by this run: the plan publishes
+    // `typeof PRESETS[number]` as `{id, label, skillLevel}`, and an extra
+    // optional field would be invisible to every runtime assertion here. A
+    // named `Preset` interface with a field nothing reads is the same defect in
+    // a different shape.
+    expectTypeOf<typeof PRESETS[number]>().toEqualTypeOf<{
+      id: string;
+      label: string;
+      skillLevel: number;
+    }>();
   });
 
   it('keeps every level inside the documented 0-20 range', () => {

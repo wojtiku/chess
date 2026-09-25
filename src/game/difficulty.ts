@@ -22,12 +22,6 @@ export interface Settings {
   hintMode: HintMode;
 }
 
-export interface Preset {
-  readonly id: string;
-  readonly label: string;
-  readonly skillLevel: number;
-}
-
 // The range the raw slider exposes. Named so the clamps, the doc comments and
 // the panel's `min`/`max` attributes cannot drift apart; deliberately not
 // exported, because the plan's public surface for this module is fixed and no
@@ -38,8 +32,12 @@ const THINK_MIN_MS = 0;
 const THINK_MAX_MS = 3000;
 const THINK_STEP_MS = 100;
 
-/** The five documented levels. Ascending, so the panel can render them in order. */
-export const PRESETS: ReadonlyArray<Preset> = [
+/** The five documented levels. Ascending, so the panel can render them in order.
+ *
+ *  The element type is written out inline rather than as a named `Preset`
+ *  interface: `typeof PRESETS[number]` is the shape the plan publishes, and an
+ *  exported interface is an extra name for a later task to depend on. */
+export const PRESETS: ReadonlyArray<{ id: string; label: string; skillLevel: number }> = [
   { id: 'beginner', label: 'Beginner', skillLevel: 1 },
   { id: 'easy', label: 'Easy', skillLevel: 4 },
   { id: 'medium', label: 'Medium', skillLevel: 8 },
@@ -47,13 +45,27 @@ export const PRESETS: ReadonlyArray<Preset> = [
   { id: 'expert', label: 'Expert', skillLevel: 20 },
 ];
 
-export const DEFAULT_SETTINGS: Settings = {
+/** The settings a first-time visitor gets.
+ *
+ *  Frozen, because every "fall back to the default" path in this project reads
+ *  this object: `clampSkill(NaN)`, `clampMinThink(NaN)`, and the five
+ *  per-field fallbacks in `settingsFrom`. An exported mutable object is a
+ *  global any caller can edit, and after one edit all of those paths return the
+ *  edited value for the rest of the session — which is also what would make the
+ *  `orientation` fallback in `settingsFrom` differ from the brief's hardcoded
+ *  `'w'`, so the freeze is what makes that equivalence unconditional rather
+ *  than conditional on nothing having written to this.
+ *
+ *  The annotation stays `Settings` because that is the shape the plan
+ *  publishes, so a write still typechecks — and now throws a `TypeError` rather
+ *  than silently succeeding, which is the point. */
+export const DEFAULT_SETTINGS: Settings = Object.freeze({
   skillLevel: 8,
   minThinkTimeMs: 500,
   orientation: 'w',
   theme: 'light',
   hintMode: 'best',
-};
+});
 
 /** `go movetime` for the opponent's reply. A hard cap, per the plan. */
 export const DEFAULT_OPPONENT_MOVETIME_MS = 1500;
@@ -87,7 +99,7 @@ export function clampMinThink(n: number): number {
 }
 
 /** The preset whose level *is* `level`. Exact, so the result is table-stable. */
-function presetAt(level: number): Preset | null {
+function presetAt(level: number): typeof PRESETS[number] | null {
   return PRESETS.find((p) => p.skillLevel === level) ?? null;
 }
 
@@ -99,7 +111,7 @@ function presetAt(level: number): Preset | null {
  * panel and the label disagree for exactly the inputs that came from
  * corrupt storage — `presetFor(NaN)` null against `presetLabel(NaN)`
  * "Medium" is a bug waiting for a NaN. */
-export function presetFor(skillLevel: number): Preset | null {
+export function presetFor(skillLevel: number): typeof PRESETS[number] | null {
   return presetAt(clampSkill(skillLevel));
 }
 

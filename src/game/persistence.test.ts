@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { newGame, legalMovesVerbose, statusOf, tryApplyMove, uciToMove, type Chess } from '../chess/rules';
+import type { GameStatus } from '../chess/types';
 import { gameAt, initialState, isGameOver, reduce, type GameSnapshot } from './gameState';
 import { DEFAULT_SETTINGS } from './difficulty';
 import { clearGame, loadGame, loadSettings, saveGame, saveSettings, type StoredMove } from './persistence';
@@ -31,14 +33,81 @@ function fromUci(...ucis: string[]): StoredMove[] {
   }));
 }
 
-/** Task 10's `hydrate`, verbatim in behaviour: replay stored moves as plays. */
+/** Task 10's `hydrate`, in the shape the review requires.
+ *
+ * Two things it must do that the plan's sketch does not:
+ *  - apply a stored resignation, or a resigned game comes back `playing` and
+ *    the opponent-reply effect takes another move in a game already given up;
+ *  - apply it *even when the move list is empty*, because resigning on move
+ *    zero is legal. The plan's `if (stored.moves.length === 0) return
+ *    initialState()` would drop exactly that resignation.
+ */
 function hydrate(stored: ReturnType<typeof loadGame>): GameSnapshot {
-  if (!stored || stored.moves.length === 0) return initialState();
-  return stored.moves.reduce(
+  if (!stored) return initialState();
+  const played = stored.moves.reduce(
     (s, m) => reduce(s, { type: 'play', move: { from: m.from, to: m.to, promotion: m.promotion, san: '' } }),
     initialState(),
   );
+  return stored.resignedBy === undefined ? played : reduce(played, { type: 'resign' });
 }
+
+/** `statusOf` after replaying a UCI line, in O(n) rather than the reducer's
+ *  O(n^2). For asserting what a 100-ply *fixture* is — never what the module
+ *  under test does, which is what `hydrate` and `loadGame` are for. */
+function statusAfter(...ucis: string[]): GameStatus {
+  const game: Chess = newGame();
+  for (const uci of ucis) {
+    if (!tryApplyMove(game, uciToMove(uci))) break;
+  }
+  return statusOf(game);
+}
+
+/** The four FEN fields chess.js compares for a repetition. The halfmove clock
+ *  and the move number are not among them, which is what a "has this position
+ *  happened before" test has to key on. */
+const repetitionKey = (game: Chess): string => game.fen().split(' ').slice(0, 4).join(' ');
+
+/** A legal game from the start position in which no pawn moves, nothing is
+ *  captured, and no position ever occurs twice — the only way to drive the
+ *  halfmove clock to 100 and reach the fifty-move draw, since any pawn move or
+ *  capture resets the clock and any repeat draws first.
+ *
+ * Greedily generated, at each ply taking the first non-pawn non-capturing move
+ * whose result is a position not seen before, rather than transcribed. The
+ * alternative was tried first: a hand-transcribed 25-pair table, which was wrong
+ * in one pair and produced a game that ended in a *threefold* at ply 14 — a
+ * fixture that fails for a reason no assertion names. This one is derived, and
+ * the test below states what it must be so a broken generator is loud.
+ *
+ * Costs ~55ms, computed once per file and cached, because it is deterministic.
+ */
+function buildFiftyMoveTour(plies: number): string[] {
+  const game = newGame();
+  const seen = new Set<string>([repetitionKey(game)]);
+  const out: string[] = [];
+  for (let ply = 0; ply < plies; ply++) {
+    const candidates = legalMovesVerbose(game)
+      .filter((m) => m.piece !== 'p' && m.captured === undefined)
+      .map((m) => `${m.from}${m.to}`)
+      .sort();
+    let chosen: string | null = null;
+    for (const uci of candidates) {
+      if (!tryApplyMove(game, uciToMove(uci))) continue;
+      const key = repetitionKey(game);
+      game.undo();
+      if (!seen.has(key)) { chosen = uci; break; }
+    }
+    if (chosen === null) throw new Error(`no fresh quiet move at ply ${ply}`);
+    tryApplyMove(game, uciToMove(chosen));
+    seen.add(repetitionKey(game));
+    out.push(chosen);
+  }
+  return out;
+}
+
+let fiftyMoveTourCache: string[] | null = null;
+/** 100 plies reach the draw; the 101st is a legal move the app's rules refuse. */
+const fiftyMoveTour = (): string[] => (fiftyMoveTourCache ??= buildFiftyMoveTour(101));
 
 // File-level, not per-`describe`. jsdom gives the whole file one real
 // `localStorage`, so a `beforeEach` scoped to a single block would leave every
@@ -120,17 +189,28 @@ describe('persistence', () => {
   });
 
   it('degrades to session-only when writing throws (private mode)', () => {
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('QuotaExceededError');
     });
+    // The spy has to be *doing* something, or the two assertions below would
+    // pass against a module that never wrote anything at all.
+    expect(vi.isMockFunction(Storage.prototype.setItem)).toBe(true);
+    expect(() => localStorage.setItem('probe', 'x')).toThrow(/QuotaExceeded/);
+    expect(spy).toHaveBeenCalled();
     expect(() => saveSettings(DEFAULT_SETTINGS)).not.toThrow();
     expect(() => saveGame([{ from: 'e2', to: 'e4' }])).not.toThrow();
+    // And the write really was refused, so the guards are what saved this.
+    expect(localStorage.getItem(SETTINGS_KEY)).toBeNull();
+    expect(localStorage.getItem(GAME_KEY)).toBeNull();
   });
 
   it('degrades to defaults when reading throws', () => {
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('SecurityError');
     });
+    expect(vi.isMockFunction(Storage.prototype.getItem)).toBe(true);
+    expect(() => localStorage.getItem('probe')).toThrow(/SecurityError/);
+    expect(spy).toHaveBeenCalled();
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
     expect(loadGame()).toBeNull();
   });
@@ -369,9 +449,12 @@ describe('game: every move type survives the round trip', () => {
     expect(hydrate(loadGame()).moves.at(-1)?.san).toBe('exd5');
   });
 
-  it('a promotion, with and without the piece named', () => {
+  it('a promotion that does not name the piece is not a playable move', () => {
     // Without `promotion` the move is illegal, so a stored list cannot rely on
-    // the reader inferring it.
+    // the reader inferring it. The *named* half of this is covered above, by
+    // `keeps a real promotion` and `keeps all four promotable pieces`; this is
+    // the rejected half, and it is rejected as an unplayable move rather than
+    // as a wrong-typed field, because `promotion` is simply absent.
     saveGame(fromUci('a2a4', 'b7b5', 'a4b5', 'h7h6', 'b5b6', 'h6h5', 'b6b7', 'h5h4', 'b7c8'));
     expect(loadGame()).toBeNull();
   });
@@ -505,6 +588,122 @@ describe('game: a move list is rejected in full if any move cannot be played', (
     expect(snapshot.status).toEqual({ kind: 'threefold' });
   });
 
+  // --- a rule-derived ending is not the same as an unplayable move ---
+  //
+  // These are the cases the whole-list gate exists for, and the reason it
+  // cannot be written as "chess.js refused the move". chess.js has no game-over
+  // guard at all: `move()` throws only when the legal-move generator is empty,
+  // which is true for checkmate and stalemate and FALSE for the other four
+  // endings. So a list that walks past a threefold is, ply by ply, entirely
+  // legal as a sequence of positions — and the app's own rules say the game was
+  // over three plies earlier.
+  //
+  // The consequence was measured before the gate was added: `loadGame` accepted
+  // `THREEFOLD + b1c3` (9 plies) and `hydrate` then reduced it to 8, because the
+  // reducer's `play` guard refuses to extend a finished game. That is the
+  // half-applied game this policy exists to prevent, arrived at by a different
+  // route and therefore invisible. Verified by execution:
+  //
+  //   threefold: isGameOver=true, probe b1c3 -> ACCEPTED 'Nc3'
+  //   fiftyMove: isGameOver=true, probe d2d4 -> ACCEPTED 'd4'
+  //
+  // Each test below asserts the cause before the consequence: that the tail
+  // move really is playable for the library, and that the prefix really is a
+  // finished game. Without both, the test would pass against a gate that
+  // rejected the list for the wrong reason.
+  it('discards a game that walks past a threefold repetition', () => {
+    const tail = 'b1c3';
+    // The prefix is a finished game...
+    expect(isGameOver(statusAfter(...THREEFOLD))).toBe(true);
+    expect(statusAfter(...THREEFOLD)).toEqual({ kind: 'threefold' });
+    // ...and the move after it is legal chess, which is the whole problem.
+    const extended = newGame();
+    for (const uci of THREEFOLD) {
+      expect(tryApplyMove(extended, uciToMove(uci))).not.toBeNull();
+    }
+    expect(tryApplyMove(extended, uciToMove(tail))).not.toBeNull();
+
+    storeGame(JSON.stringify({ moves: fromUci(...THREEFOLD, tail) }));
+    expect(loadGame()).toBeNull();
+  });
+
+  it('keeps the same game when it stops at the repetition', () => {
+    // The other half again: the prefix on its own is a game the learner played.
+    storeGame(JSON.stringify({ moves: fromUci(...THREEFOLD) }));
+    const snapshot = hydrate(loadGame());
+    expect(snapshot.moves).toHaveLength(THREEFOLD.length);
+    expect(snapshot.status).toEqual({ kind: 'threefold' });
+  });
+
+  it('discards a game that walks past a fifty-move draw', () => {
+    // The same hole reached by the other rule, and the one that proves the gate
+    // consults `isGameOver` rather than the two endings chess.js happens to
+    // enforce. Chess.js accepts a move at a saturated halfmove clock, because
+    // the position still has legal moves.
+    const tour = fiftyMoveTour();
+    const atDraw = tour.slice(0, 100);
+    const tail = tour[100];
+    expect(tail).toBeDefined();
+    // The prefix is a fifty-move draw and not a threefold, so the gate has to be
+    // reading the clock rather than the history.
+    expect(statusAfter(...atDraw)).toEqual({ kind: 'fiftyMove' });
+    expect(isGameOver(statusAfter(...atDraw))).toBe(true);
+    // And the 101st ply is playable for the library.
+    const extended = newGame();
+    for (const uci of atDraw) {
+      expect(tryApplyMove(extended, uciToMove(uci))).not.toBeNull();
+    }
+    expect(tryApplyMove(extended, uciToMove(tail ?? ''))).not.toBeNull();
+
+    storeGame(JSON.stringify({ moves: fromUci(...tour) }));
+    expect(loadGame()).toBeNull();
+  });
+
+  it('keeps a game that ends exactly at the fifty-move draw', () => {
+    const atDraw = fiftyMoveTour().slice(0, 100);
+    storeGame(JSON.stringify({ moves: fromUci(...atDraw) }));
+    const snapshot = hydrate(loadGame());
+    expect(snapshot.moves).toHaveLength(100);
+    expect(snapshot.status).toEqual({ kind: 'fiftyMove' });
+  });
+
+  it('covers every ending the status union can name, not just the two chess.js enforces', () => {
+    // The gate is only as good as `isGameOver`, and `insufficientMaterial` is
+    // the ending with no fixture: reaching K+B against K by legal play from the
+    // start position means capturing the other 30 pieces, so no short stored
+    // list ends that way. What carries the coverage instead is that the gate asks
+    // the predicate rather than testing for a mate, so this test pins the
+    // predicate is exhaustive over the union — and the compile-time half below
+    // is what stops a seventh `GameStatus` kind being added to `types.ts`
+    // without this file noticing, which is Task 5's deferred minor and the one
+    // thing that could reopen this hole silently.
+    const ENDINGS: ReadonlyArray<readonly [GameStatus, boolean]> = [
+      [{ kind: 'checkmate', winner: 'w' }, true],
+      [{ kind: 'stalemate' }, true],
+      [{ kind: 'threefold' }, true],
+      [{ kind: 'fiftyMove' }, true],
+      [{ kind: 'insufficientMaterial' }, true],
+      [{ kind: 'resigned', winner: 'b' }, true],
+      [{ kind: 'playing', check: false }, false],
+      [{ kind: 'playing', check: true }, false],
+    ];
+    for (const [status, over] of ENDINGS) {
+      expect(isGameOver(status)).toBe(over);
+    }
+
+    const ALL_KINDS = [
+      'playing', 'checkmate', 'stalemate', 'threefold', 'fiftyMove',
+      'insufficientMaterial', 'resigned',
+    ] as const;
+    // If the union grows a kind, `Missing` stops being `never`, both aliases
+    // become `never`, and these two lines stop compiling.
+    type Missing = Exclude<GameStatus['kind'], (typeof ALL_KINDS)[number]>;
+    type Extra = Exclude<(typeof ALL_KINDS)[number], GameStatus['kind']>;
+    const _allKindsListed: [Missing] extends [never] ? true : never = true;
+    const _noExtraKinds: [Extra] extends [never] ? true : never = true;
+    expect([_allKindsListed, _noExtraKinds]).toEqual([true, true]);
+  });
+
   it('keeps a game that is still in progress', () => {
     storeGame(JSON.stringify({ moves: fromUci(...THREEFOLD.slice(0, 3)) }));
     const snapshot = hydrate(loadGame());
@@ -516,6 +715,106 @@ describe('game: a move list is rejected in full if any move cannot be played', (
     storeGame(JSON.stringify({ moves: [] }));
     expect(loadGame()).toEqual({ moves: [] });
     expect(hydrate(loadGame()).moves).toEqual([]);
+  });
+});
+
+describe('game: a resignation survives the reload', () => {
+  // WHY THIS EXISTS. `resign` sets `status` and `resignedBy` without touching
+  // `moves`, so a move list alone cannot express it. On reload the status comes
+  // back rule-derived, `gameOver` is false, and the opponent-reply effect — which
+  // gates on `gameOver`, `reviewing` and `playerTurn` — takes another move in a
+  // game the learner already gave up. So the field is persisted, optionally, so
+  // a payload written before it existed still loads.
+  //
+  // SEMANTICS CHOSEN: a stored `resignedBy` is VALIDATED against the side to
+  // move at the end of the replayed list, and the whole game is discarded on
+  // disagreement. It is not trusted as written. The reason is that agreement is
+  // checkable and the check is already paid for: the gate replays the list to
+  // the end, so the side to move is in hand, and `reduce`'s `resign` derives the
+  // loser from exactly that value — `const loser = game.turn()`. A stored value
+  // that disagrees is therefore provably not something this app wrote, which
+  // makes it corrupt data of the same kind as an unplayable move, and this file
+  // resolves corruption by discarding rather than by guessing. Guessing here
+  // would mean picking a winner for a game from two contradictory facts.
+  it('round-trips a resignation', () => {
+    // 1.e4, so Black is to move: a Black resignation is the consistent record.
+    saveGame(fromUci('e2e4'), 'b');
+    expect(localStorage.getItem(GAME_KEY)).toContain('"resignedBy":"b"');
+    const loaded = loadGame();
+    expect(loaded).toEqual({ moves: fromUci('e2e4'), resignedBy: 'b' });
+    // And the end-to-end consequence: the game comes back resigned, so the
+    // opponent-reply effect sees `gameOver` and leaves the board alone.
+    const snapshot = hydrate(loaded);
+    expect(snapshot.moves).toHaveLength(1);
+    expect(snapshot.status).toEqual({ kind: 'resigned', winner: 'w' });
+    expect(snapshot.resignedBy).toBe('b');
+    expect(isGameOver(snapshot.status)).toBe(true);
+  });
+
+  it('round-trips a resignation on an empty game', () => {
+    // Resigning on move zero is legal, and it is the case the plan's `hydrate`
+    // sketch throws away: `if (stored.moves.length === 0) return initialState()`
+    // returns before a resignation could be applied.
+    saveGame([], 'w');
+    expect(loadGame()).toEqual({ moves: [], resignedBy: 'w' });
+    const snapshot = hydrate(loadGame());
+    expect(snapshot.moves).toEqual([]);
+    expect(snapshot.status).toEqual({ kind: 'resigned', winner: 'b' });
+    expect(snapshot.resignedBy).toBe('w');
+  });
+
+  it('leaves the payload of an unresigned game exactly as it was', () => {
+    // `resignedBy: undefined` must not appear in storage, so the wire format
+    // for every game written before this field existed is unchanged.
+    saveGame(fromUci('e2e4'));
+    expect(localStorage.getItem(GAME_KEY)).toBe('{"moves":[{"from":"e2","to":"e4"}]}');
+    expect(loadGame()).toEqual({ moves: fromUci('e2e4') });
+    // `toEqual`, not `toMatchObject`: a `resignedBy: undefined` key riding along
+    // would be indistinguishable from a stored resignation at the call site.
+    expect(Object.keys(loadGame() ?? {})).toEqual(['moves']);
+  });
+
+  it('reads a payload with no resignation key at all', () => {
+    storeGame(JSON.stringify({ moves: fromUci('e2e4', 'e7e5') }));
+    const loaded = loadGame();
+    expect(loaded).toEqual({ moves: fromUci('e2e4', 'e7e5') });
+    expect(loaded?.resignedBy).toBeUndefined();
+    expect(hydrate(loaded).status).toEqual({ kind: 'playing', check: false });
+  });
+
+  it('does not let a resignation change what the move list may contain', () => {
+    // The all-or-nothing gate is about the list, and a resignation is a
+    // declaration that comes after the last move. Here the learner resigned
+    // after being mated, which `reduce` allows, and the list is still valid.
+    saveGame(fromUci(...SCHOLARS_MATE), 'b');
+    const snapshot = hydrate(loadGame());
+    expect(snapshot.moves).toHaveLength(SCHOLARS_MATE.length);
+    expect(snapshot.status).toEqual({ kind: 'resigned', winner: 'w' });
+  });
+
+  it.each([
+    ['the side that resigned is not the side to move', { moves: fromUci('e2e4'), resignedBy: 'w' }],
+    ['it disagrees on an empty game', { moves: [], resignedBy: 'b' }],
+    ['it is not a side', { moves: fromUci('e2e4'), resignedBy: 'black' }],
+    ['it is a number', { moves: fromUci('e2e4'), resignedBy: 1 }],
+    ['it is null, which is a value and not an absence', { moves: fromUci('e2e4'), resignedBy: null }],
+    ['it is an object', { moves: fromUci('e2e4'), resignedBy: { side: 'b' } }],
+    ['and the moves are corrupt too', { moves: fromUci('e2e5'), resignedBy: 'b' }],
+  ])('discards a game where %s', (_label, payload) => {
+    storeGame(JSON.stringify(payload));
+    expect(loadGame()).toBeNull();
+    // The corruption is not partial either: nothing survives, so the app cannot
+    // show the moves and merely lose the banner.
+    expect(hydrate(loadGame()).moves).toEqual([]);
+  });
+
+  it('validates against the side to move, not against the side that moved last', () => {
+    // The distinction that makes the rule a rule: after 1.e4 it is Black to
+    // move, so `b` is right and `w` is wrong even though White moved last.
+    storeGame(JSON.stringify({ moves: fromUci('e2e4'), resignedBy: 'b' }));
+    expect(loadGame()?.resignedBy).toBe('b');
+    storeGame(JSON.stringify({ moves: fromUci('e2e4'), resignedBy: 'w' }));
+    expect(loadGame()).toBeNull();
   });
 });
 
@@ -541,9 +840,15 @@ describe('when storage itself is unavailable', () => {
 
   it('really is restored afterwards: a normal write and read still work', () => {
     // The `afterEach` above is what makes the throwing-storage tests
-    // independent. If the spy leaked, every later test would silently be
-    // testing the degraded path instead of real storage.
+    // independent. On its own this test cannot tell "restored" from "never
+    // applied" — which is why the two tests above each assert that their spy
+    // *is* live before relying on it. Together: a spy that demonstrably takes
+    // effect, and a later test with no spy at all, so the only way both hold is
+    // if the hook cleaned up.
     expect(vi.isMockFunction(localStorage.setItem)).toBe(false);
+    expect(vi.isMockFunction(localStorage.getItem)).toBe(false);
+    localStorage.setItem('probe', 'x');
+    expect(localStorage.getItem('probe')).toBe('x');
     saveSettings({ ...DEFAULT_SETTINGS, skillLevel: 13 });
     expect(localStorage.getItem(SETTINGS_KEY)).toContain('"skillLevel":13');
     expect(loadSettings()).toMatchObject({ skillLevel: 13 });
