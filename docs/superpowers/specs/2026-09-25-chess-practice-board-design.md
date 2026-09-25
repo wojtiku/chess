@@ -39,7 +39,19 @@ piece, or a competitive ladder.
 | Decision | Choice | Why |
 |---|---|---|
 | Rules | `chess.js` | The most battle-tested JS chess library. Perft-validated, handles SAN, PGN, FEN, threefold, fifty-move, insufficient material and underpromotion natively. Removes the largest correctness risk in the project. |
-| Engine | `stockfish` (Stockfish 18, lite single-threaded WASM) in a Web Worker | Its NNUE evaluation is accurate enough to *teach from*. Weaker engines give advice that is sometimes wrong, which is worse than no advice. Also provides `Skill Level` for beatable-but-human play, and rich `info` output (score, depth, PV, MultiPV) that powers hints and the eval bar. |
+| Engine | `stockfish` (Stockfish **19**, `lite-single` WASM build) in a Web Worker | Its NNUE evaluation is accurate enough to *teach from*. Weaker engines give advice that is sometimes wrong, which is worse than no advice. Also provides `Skill Level` for beatable-but-human play, and rich `info` output (score, depth, PV, MultiPV) that powers hints and the eval bar. |
+
+**Engine licensing — GPL-3.0.** The `stockfish` npm package and the WASM binary it
+ships are GPL-3.0 (the MIT notice in the package's `index.js` covers only that
+Node wrapper, not the engine). This is fine for a local, self-hosted personal app
+and is the reason we take the engine as an unmodified dependency rather than
+vendoring its source. It would have to be revisited before this were ever
+published or hosted as a closed-source product. `chess.js` is BSD-2-Clause.
+
+**Engine size — smaller than assumed.** The `lite-single` build is ~1.8MB of
+WASM (not the ~7MB quoted from the upstream README, which describes the
+multi-threaded lite build). The lazy-load plan in §7.4 is comfortable at this
+size.
 | Difficulty | UCI `Skill Level` (0–20) | Purpose-built by Stockfish for playing below full strength. Gives believable beginner mistakes instead of random ones. |
 | Build | Vite + React + TypeScript | Board, move list, hints and eval bar are interdependent state; React models this directly. |
 | Architecture | Chess.js owns position; engine is a pure FEN-in/answer-out service | Prevents castling/en-passant state drift, which is the classic source of illegal games when an engine holds its own position. |
@@ -292,7 +304,7 @@ it is the reason the rules layer is kept completely independent of the engine.
 ### 7.4 Worker lifecycle
 
 The worker is created lazily on first need (first computer move, first hint, or
-first eval request) so the ~7MB engine is never on the critical path for first
+first eval request) so the ~1.8MB engine is never on the critical path for first
 paint. One worker per app instance, terminated on unmount. If the worker dies
 mid-search, it is recreated and the request retried **once**; a second failure
 surfaces an error rather than looping.
@@ -413,7 +425,7 @@ Vitest, plus React Testing Library and Playwright for end-to-end.
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Stockfish WASM fails to resolve from a worker in a Vite production build | The app has no opponent | Verified in the first task against `vite preview`, not dev. Fallback: serve engine assets from `public/` and use a non-bundled worker. |
-| ~7MB engine download | Slow first hint or first reply | Lazy worker creation so it is off the first-paint path; visible loading state. |
+| ~1.8MB engine download | Slow first hint or first reply | Lazy worker creation so it is off the first-paint path; optional download-progress channel; visible loading state. |
 | A search overruns its budget | Frozen UI | Hard `movetime` cap; the worker is off the main thread regardless. |
 | Feedback that is subtly wrong | Teaches bad chess — the worst outcome for this app | Stockfish eval rather than a hand-rolled one; perft guard; thresholds unit-tested at their boundaries. |
 | Eval bar jitters during analysis | Reads as noise | Update only on an improved score at greater depth; ease transitions. |
