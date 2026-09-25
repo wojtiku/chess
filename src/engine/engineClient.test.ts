@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EngineClient } from './engineClient';
+import { EngineClient, EngineError } from './engineClient';
 
 type Listener = (ev: unknown) => void;
 
@@ -25,6 +25,7 @@ class FakeWorker {
 
   private readonly listeners = new Map<string, Set<Listener>>();
   private waiters: Array<(line: string) => void> = [];
+  private countWaiters: Array<() => void> = [];
 
   constructor(public readonly url: string) {
     FakeWorker.last = this;
@@ -37,6 +38,7 @@ class FakeWorker {
     // Draining the list here would silently discard the waiters that this line
     // does not satisfy, and the next matching post would find nobody waiting.
     for (const waiter of [...this.waiters]) waiter(data);
+    for (const waiter of [...this.countWaiters]) waiter();
   }
 
   addEventListener(type: string, listener: Listener): void {
@@ -95,6 +97,19 @@ class FakeWorker {
     });
   }
 
+  /** Resolves once `n` lines matching `pattern` have been posted in total. */
+  waitForCount(pattern: RegExp, n: number): Promise<void> {
+    if (this.sentMatching(pattern).length >= n) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const check = (): void => {
+        if (this.sentMatching(pattern).length < n) return;
+        this.countWaiters = this.countWaiters.filter((w) => w !== check);
+        resolve();
+      };
+      this.countWaiters.push(check);
+    });
+  }
+
   private dispatch(type: string, ev: unknown): void {
     for (const listener of [...(this.listeners.get(type) ?? [])]) listener(ev);
   }
@@ -109,6 +124,9 @@ function install(): void {
 }
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+/** Scholar's-mate position: `d1h5` mates, `e2e4` is legal but pointless. A second
+ * search on this FEN makes a stale answer from the first visibly wrong. */
+const MATE_FEN = 'rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR w KQkq - 0 2';
 const SKILL = /^setoption name Skill Level value /;
 const MOVETIME = /^go movetime /;
 
@@ -147,6 +165,58 @@ function swallow(p: Promise<unknown>): void {
   // Attach a no-op handler now so a rejection arriving before the assertion is
   // not reported as an unhandled rejection.
   p.catch(() => {});
+}
+
+/** Whether a promise has settled, synchronously. The caller must `await flush()`
+ * first for an already-settled promise to have reported. Used to assert that a
+ * *stale* engine line did NOT settle a search — `await expect(...).rejects` on the
+ * stale line's promise would just wait out the full search timeout instead. */
+function settledFlag<T>(p: Promise<T>): () => boolean {
+  let settled = false;
+  void p.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  return () => settled;
+}
+
+/** Narrow a rejection to the `EngineError` the client is contracted to throw, so
+ * the `code`/`retryable` assertions below are checked against a real type rather
+ * than a cast. */
+function asEngineError(e: unknown): EngineError {
+  if (e instanceof EngineError) return e;
+  throw new Error(`expected an EngineError, got ${String(e)}`);
+}
+
+/** The single element of a list asserted to have length 1, without the
+ * `possibly undefined` that `noUncheckedIndexedAccess` would otherwise report. */
+function one<T>(items: readonly T[], what: string): T {
+  expect(items).toHaveLength(1);
+  const only = items[0];
+  if (only === undefined) throw new Error(`${what}: expected one item, found none`);
+  return only;
+}
+
+/** Let queued microtasks (promise bookkeeping) run. */
+async function flush(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+/** Resolve within `ms`, or reject with a message naming what hung. Used where a
+ * regression would otherwise hang the suite until vitest's own timeout. */
+function within<T>(p: Promise<T>, what: string, ms = 200): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(`${what} did not settle within ${ms}ms`)), ms);
+    }),
+  ]);
 }
 
 describe('FakeWorker harness', () => {
@@ -810,8 +880,43 @@ describe('EngineClient', () => {
 
       await expect(first).resolves.toMatch(/superseded/);
 
+      // Two `go`s were sent, so the engine owes two answers: the first is stale
+      // and settles nobody, the second settles the replacement.
       w.emit('bestmove e2e4');
-      await expect(second).resolves.toMatchObject({ bestMove: 'e2e4' });
+      w.emit('bestmove e7e5');
+      await expect(within(second, 'replacement search')).resolves.toMatchObject({
+        bestMove: 'e7e5',
+      });
+      c.dispose();
+    });
+
+    it("a superseded search's late bestmove does not resolve its replacement", async () => {
+      const c = new EngineClient();
+      const { p, w } = await boot(c, { movetimeMs: 50 });
+      const first = p.then(
+        () => 'resolved',
+        (e: unknown) => (e as Error).message,
+      );
+
+      // A different position, so a stale answer is visibly wrong rather than
+      // merely surprising: 'e2e4' is a legal move in both, but it was chosen
+      // for the first position.
+      const mark = w.mark();
+      const second = c.search(MATE_FEN, { movetimeMs: 50 });
+      await w.waitForSentSince(mark, MOVETIME);
+      await expect(first).resolves.toMatch(/superseded/);
+
+      // The engine is still answering the first `go`. That answer belongs to a
+      // search nobody is waiting for any more, so it must settle nobody.
+      const isSettled = settledFlag(second);
+      w.emit('bestmove e2e4');
+      await flush();
+      expect(isSettled()).toBe(false);
+
+      // The replacement's own answer settles it, with its own move.
+      w.emit('bestmove d1h5');
+      const r = await within(second, 'replacement search');
+      expect(r.bestMove).toBe('d1h5');
       c.dispose();
     });
 
@@ -893,6 +998,27 @@ describe('EngineClient', () => {
       c.dispose();
     });
 
+    it('sends stop to the worker the go was sent to, not to a replacement', async () => {
+      vi.useFakeTimers();
+      const c = new EngineClient();
+      const { p, w } = await boot(c, { movetimeMs: 1000 });
+
+      vi.advanceTimersByTime(11_000);
+      await expect(p).rejects.toThrow(/timed out/);
+
+      // `stop` must reach the worker that received the `go`. If the client's
+      // current worker reference had drifted to a replacement, `stop` would land
+      // in a different worker's log — and the search's own worker would be left
+      // searching. Asserted against the issuing worker, so a drift is visible.
+      expect(w.sentMatching(/^stop$/)).toHaveLength(1);
+      expect(w.sentMatching(/^go movetime /)).toHaveLength(1);
+      // The issuing worker is the one that was dropped, so nothing is left
+      // running: no second worker exists to have absorbed the stop instead.
+      expect(w.terminated).toBe(true);
+      expect(FakeWorker.created).toBe(1);
+      c.dispose();
+    });
+
     it('drops the timed-out worker so its late bestmove cannot answer the next search', async () => {
       vi.useFakeTimers();
       const c = new EngineClient();
@@ -952,6 +1078,334 @@ describe('EngineClient', () => {
     });
   });
 
+  describe('failure codes', () => {
+    it('classifies a worker death as retryable', async () => {
+      const c = new EngineClient();
+      const { p, w } = await boot(c);
+
+      w.emitError(new Error('worker died'));
+
+      // Narrowed through the exported class, not a cast, so the code/retryable
+      // assertions are checked against the real contract.
+      const err = asEngineError(await p.then(
+        () => null,
+        (e: unknown) => e,
+      ));
+      expect(err.name).toBe('EngineError');
+      expect(err.code).toBe('worker-died');
+      expect(err.retryable).toBe(true);
+      expect(err.message).toBe('worker died');
+      // The original failure is preserved as `cause`, not flattened away.
+      expect(err.cause).toBeInstanceOf(Error);
+      c.dispose();
+    });
+
+    it('classifies a handshake timeout as retryable', async () => {
+      vi.useFakeTimers();
+      const c = new EngineClient();
+      const p = c.search(START_FEN, { movetimeMs: 1000 });
+      swallow(p);
+      const w = FakeWorker.last!;
+      await w.waitForSent(/^uci$/);
+
+      vi.advanceTimersByTime(20_000);
+
+      await expect(p).rejects.toMatchObject({
+        code: 'handshake-timeout',
+        retryable: true,
+      });
+      c.dispose();
+    });
+
+    it('classifies a search timeout as not retryable', async () => {
+      vi.useFakeTimers();
+      const c = new EngineClient();
+      const { p, w } = await boot(c, { movetimeMs: 1000 });
+
+      vi.advanceTimersByTime(11_000);
+
+      await expect(p).rejects.toMatchObject({ code: 'timeout', retryable: false });
+      c.dispose();
+    });
+
+    it('classifies a superseded search as not retryable', async () => {
+      const c = new EngineClient();
+      const { p, w } = await boot(c);
+      const first = p.then(
+        () => null,
+        (e: unknown) => e,
+      );
+
+      const mark = w.mark();
+      const second = c.search(START_FEN, { movetimeMs: 50 });
+      await w.waitForSentSince(mark, MOVETIME);
+
+      const err = asEngineError(await first);
+      expect(err.code).toBe('superseded');
+      expect(err.retryable).toBe(false);
+      // Two `go`s, two answers: the stale one settles nobody.
+      w.emit('bestmove e2e4');
+      w.emit('bestmove e7e5');
+      await within(second, 'replacement search');
+      c.dispose();
+    });
+
+    it('classifies a disposed client as not retryable', async () => {
+      const c = new EngineClient();
+      const { p, w } = await boot(c);
+
+      c.dispose();
+
+      await expect(p).rejects.toMatchObject({ code: 'disposed', retryable: false });
+    });
+
+    it('classifies a boot rejected by dispose as disposed, not retryable', async () => {
+      const c = new EngineClient();
+      const p = c.newGame();
+      swallow(p);
+      const w = FakeWorker.last!;
+      await w.waitForSent(/^uci$/);
+
+      c.dispose();
+
+      await expect(p).rejects.toMatchObject({ code: 'disposed', retryable: false });
+    });
+
+    it('exposes the code on c.error as well as on the rejection', async () => {
+      const c = new EngineClient();
+      const { p, w } = await boot(c);
+
+      w.emitError(new Error('worker died'));
+      await expect(p).rejects.toThrow();
+
+      expect(c.error).toBeInstanceOf(EngineError);
+      expect(c.error?.code).toBe('worker-died');
+      expect(c.error?.retryable).toBe(true);
+      c.dispose();
+    });
+
+    it('wraps a non-Error failure event without losing the code', async () => {
+      const c = new EngineClient();
+      const { p, w } = await boot(c);
+
+      w.emitError('script error');
+
+      await expect(p).rejects.toMatchObject({
+        code: 'worker-died',
+        retryable: true,
+        message: 'Engine worker error',
+      });
+      c.dispose();
+    });
+  });
+
+  describe('concurrent callers', () => {
+    it('two concurrent newGame calls share one handshake and both resolve', async () => {
+      const c = new EngineClient();
+      const a = c.newGame();
+      const b = c.newGame();
+      swallow(a);
+      swallow(b);
+      const w = FakeWorker.last!;
+
+      // One boot, however many callers joined it.
+      await w.waitForSent(/^uci$/);
+      expect(w.sentMatching(/^uci$/)).toHaveLength(1);
+      w.emit('uciok');
+      await w.waitForSent(/^isready$/);
+      expect(w.sentMatching(/^isready$/)).toHaveLength(1);
+      w.emit('readyok');
+
+      await within(a, 'first newGame');
+      await within(b, 'second newGame');
+
+      // Sharing the boot must not swallow the per-call work: each New Game
+      // still resets the engine and re-sends Skill Level (plan requirement).
+      expect(w.sentMatching(/^ucinewgame$/)).toHaveLength(2);
+      expect(w.sentMatching(SKILL)).toEqual([
+        'setoption name Skill Level value 8',
+        'setoption name Skill Level value 8',
+      ]);
+      expect(c.status).toBe('ready');
+      c.dispose();
+    });
+
+    it('two concurrent searches share one handshake and both settle', async () => {
+      const c = new EngineClient();
+      // One per position, so a stale answer is visibly wrong rather than merely
+      // surprising: `e2e4` and `d1h5` are legal in both, but each was chosen
+      // for its own.
+      const calls = [
+        { fen: START_FEN, own: 'e2e4', stale: 'd1h5' },
+        { fen: MATE_FEN, own: 'd1h5', stale: 'e2e4' },
+      ].map((call) => {
+        const p = c.search(call.fen, { movetimeMs: 50 });
+        return {
+          ...call,
+          settled: settledFlag(p),
+          outcome: p.then(
+            (r) => ({ kind: 'resolved' as const, bestMove: r.bestMove }),
+            (e: unknown) => ({ kind: 'rejected' as const, code: (e as EngineError).code }),
+          ),
+        };
+      });
+      const w = FakeWorker.last!;
+
+      // One boot, however many callers joined it.
+      await w.waitForSent(/^uci$/);
+      expect(w.sentMatching(/^uci$/)).toHaveLength(1);
+      w.emit('uciok');
+      await w.waitForSent(/^isready$/);
+      expect(w.sentMatching(/^isready$/)).toHaveLength(1);
+      w.emit('readyok');
+
+      // Two `go`s, so the engine owes two answers.
+      await w.waitForCount(MOVETIME, 2);
+
+      // Which caller survives is decided by the order their continuations resume
+      // after the shared boot, not by the order they were called in, so this
+      // asserts the invariant rather than the interleaving: exactly one search
+      // is still pending, and the other was told it was superseded. The old code
+      // orphaned the loser entirely — it hung, even after dispose().
+      await flush();
+      const pending = calls.filter((call) => !call.settled());
+      const done = calls.filter((call) => call.settled());
+      expect(pending).toHaveLength(1);
+      const superseded = one(done, 'the superseded caller');
+      expect(await superseded.outcome).toEqual({ kind: 'rejected', code: 'superseded' });
+
+      const survivor = one(pending, 'the surviving caller');
+      // The stale answer arrives first, exactly as it would from a real engine
+      // that is still finishing the superseded search. It must settle nobody: a
+      // stale move here is a wrong move played on the board.
+      w.emit(`bestmove ${superseded.own}`);
+      await flush();
+      expect(survivor.settled()).toBe(false);
+
+      w.emit(`bestmove ${survivor.own}`);
+      expect(await within(survivor.outcome, 'the surviving search')).toEqual({
+        kind: 'resolved',
+        bestMove: survivor.own,
+      });
+      c.dispose();
+    });
+
+    it('a second search during a boot does not orphan the first promise', async () => {
+      const c = new EngineClient();
+      const calls = [
+        { fen: START_FEN, own: 'e2e4', stale: 'd1h5' },
+        { fen: MATE_FEN, own: 'd1h5', stale: 'e2e4' },
+      ].map((call) => {
+        const p = c.search(call.fen, { movetimeMs: 50 });
+        return {
+          ...call,
+          settled: settledFlag(p),
+          outcome: p.then(
+            (r) => `resolved:${r.bestMove}`,
+            (e: unknown) => (e as EngineError).code,
+          ),
+        };
+      });
+      const w = FakeWorker.last!;
+      await w.waitForSent(/^uci$/);
+
+      // Before the boot even answers, both callers are waiting on it. Neither
+      // may be orphaned: the old code left one of them hung, even after
+      // dispose().
+      w.emit('uciok');
+      await w.waitForSent(/^isready$/);
+      w.emit('readyok');
+      await w.waitForCount(MOVETIME, 2);
+
+      await flush();
+      const pending = calls.filter((call) => !call.settled());
+      const done = calls.filter((call) => call.settled());
+      expect(pending).toHaveLength(1);
+      const superseded = one(done, 'the superseded caller');
+      expect(await superseded.outcome).toBe('superseded');
+
+      const survivor = one(pending, 'the surviving caller');
+      w.emit(`bestmove ${superseded.own}`);
+      await flush();
+      expect(survivor.settled()).toBe(false);
+      w.emit(`bestmove ${survivor.own}`);
+
+      expect(await within(survivor.outcome, 'the surviving search')).toBe(
+        `resolved:${survivor.own}`,
+      );
+      c.dispose();
+    });
+
+    it('dispose() settles a promise joined to a boot it did not start', async () => {
+      const c = new EngineClient();
+      const a = c.newGame();
+      const b = c.newGame();
+      swallow(a);
+      swallow(b);
+      const w = FakeWorker.last!;
+      await w.waitForSent(/^uci$/);
+
+      c.dispose();
+
+      // Both callers get an answer. The old code rejected only the *current*
+      // handshake, so the overwritten promise stayed hung forever.
+      await expect(within(a, 'first newGame after dispose')).rejects.toMatchObject({
+        code: 'disposed',
+      });
+      await expect(within(b, 'second newGame after dispose')).rejects.toMatchObject({
+        code: 'disposed',
+      });
+      c.dispose();
+    });
+
+    it('does not hand a booting client a second handshake after the first settles', async () => {
+      const c = new EngineClient();
+      await bootNewGame(c);
+      const w = FakeWorker.last!;
+
+      // A settled boot must not be memoised, or this would post nothing at all.
+      const p = c.newGame();
+      await p;
+
+      expect(w.sentMatching(/^uci$/)).toHaveLength(1);
+      expect(w.sentMatching(/^ucinewgame$/)).toHaveLength(2);
+      c.dispose();
+    });
+
+    it('a boot that failed is not memoised, so the next call reboots', async () => {
+      vi.useFakeTimers();
+      const c = new EngineClient();
+      const failing = c.newGame();
+      swallow(failing);
+      const w = FakeWorker.last!;
+      await w.waitForSent(/^uci$/);
+
+      vi.advanceTimersByTime(20_000);
+      await expect(failing).rejects.toMatchObject({ code: 'handshake-timeout' });
+
+      const retry = c.newGame();
+      const retryOutcome = retry.then(
+        () => 'resolved',
+        (e: unknown) => (e as { code?: string }).code,
+      );
+      // A real new worker, and a real new handshake: the memo must have been
+      // cleared, or this would re-await the dead boot and hang.
+      const w2 = FakeWorker.last!;
+      expect(w2).not.toBe(w);
+      await w2.waitForSent(/^uci$/);
+      expect(w2.sentMatching(/^uci$/)).toHaveLength(1);
+      w2.emit('uciok');
+      await w2.waitForSent(/^isready$/);
+      w2.emit('readyok');
+
+      // Fake timers are still installed, so `within`'s guard timer would never
+      // fire; the outcome is driven by explicit flushing instead.
+      await flush();
+      expect(await retryOutcome).toBe('resolved');
+      c.dispose();
+    });
+  });
+
   describe('status', () => {
     it('moves idle -> loading -> ready -> thinking -> ready', async () => {
       const c = new EngineClient();
@@ -993,6 +1447,75 @@ describe('EngineClient', () => {
 
       expect(c.status).toBe('idle');
       expect(seen).toEqual(['idle']);
+    });
+
+    it('clears a previous error on dispose, so idle does not report a failure', async () => {
+      const c = new EngineClient();
+      const { p, w } = await boot(c);
+      w.emitError(new Error('worker died'));
+      await expect(p).rejects.toThrow();
+      expect(c.error).not.toBeNull();
+      expect(c.status).toBe('error');
+
+      c.dispose();
+
+      // 'idle' plus a non-null `error` is a confusing state: a torn-down client
+      // should read as never having failed.
+      expect(c.status).toBe('idle');
+      expect(c.error).toBeNull();
+    });
+
+    it('a disposed-and-failed client boots cleanly on the next search', async () => {
+      const c = new EngineClient();
+      const { p, w } = await boot(c);
+      w.emitError(new Error('worker died'));
+      await expect(p).rejects.toThrow();
+      c.dispose();
+
+      const { p: next, w: w2 } = await boot(c, { movetimeMs: 50 });
+      w2.emit('bestmove e2e4');
+
+      await expect(within(next, 'search after dispose')).resolves.toMatchObject({
+        bestMove: 'e2e4',
+      });
+      expect(c.error).toBeNull();
+      c.dispose();
+    });
+
+    it('survives a status subscriber that throws, and still rejects the search', async () => {
+      const c = new EngineClient();
+      const { p, w } = await boot(c);
+      c.onStatus(() => {
+        throw new Error('subscriber blew up');
+      });
+
+      // The failure path notifies *and* rejects. A throwing subscriber must not
+      // be able to skip the rejection and leave the caller hanging: the old code
+      // called setStatus first, so the throw swallowed both rejections.
+      w.emitError(new Error('worker died'));
+
+      await expect(within(p, 'search rejected despite a throwing subscriber')).rejects.toThrow(
+        'worker died',
+      );
+      expect(c.status).toBe('error');
+      c.dispose();
+    });
+
+    it('rejects the search even when a throwing subscriber runs first', async () => {
+      const c = new EngineClient();
+      const { p, w } = await boot(c);
+      const seen: string[] = [];
+      c.onStatus((s) => {
+        seen.push(s);
+        throw new Error('subscriber blew up');
+      });
+
+      w.emitError(new Error('worker died'));
+
+      await expect(p).rejects.toThrow('worker died');
+      // The subscriber still saw the status change it threw on.
+      expect(seen).toContain('error');
+      c.dispose();
     });
 
     it('tolerates a subscriber that unsubscribes while being notified', async () => {
