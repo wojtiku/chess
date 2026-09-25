@@ -1,0 +1,11 @@
+.controls { display: flex; flex-direction: column; gap: 8px; }
+.controls-nav, .controls-main { display: flex; gap: 6px; }
+.controls button {
+  flex: 1; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--board-border);
+  background: var(--panel-bg); color: inherit; font: inherit; cursor: pointer;
+  min-height: 34px;
+}
+.controls button:disabled { opacity: 0.45; cursor: not-allowed; }
+.controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The four navigation buttons are icons, so they are sized rather than padded. */
+.controls-nav button { display: grid; place-items: center; }

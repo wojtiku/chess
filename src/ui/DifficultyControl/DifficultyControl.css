@@ -1,0 +1,18 @@
+.difficulty { display: flex; flex-direction: column; gap: 10px; }
+.difficulty-presets { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.difficulty-presets button {
+  padding: 6px 2px; font-size: 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--board-border); background: var(--panel-bg); color: inherit;
+}
+.difficulty-presets button[aria-checked='true'] { background: var(--accent); color: #fff; border-color: var(--accent); }
+.difficulty-presets button:disabled { opacity: 0.45; cursor: not-allowed; }
+.difficulty-presets button:focus-visible { outline: 2px solid var(--accent); }
+.difficulty-current { margin: 0; font-size: 13px; opacity: 0.75; }
+.difficulty-slider { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.difficulty-slider input { width: 100%; }
+.difficulty-hint { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.difficulty-hint select { font: inherit; padding: 4px; border-radius: 6px;
+  border: 1px solid var(--board-border); background: var(--panel-bg); color: inherit; }
+.difficulty-advanced { justify-self: start; font-size: 12px; background: none;
+  border: 0; color: var(--accent); cursor: pointer; padding: 0; text-decoration: underline; }
+.difficulty-advanced:focus-visible { outline: 2px solid var(--accent); }

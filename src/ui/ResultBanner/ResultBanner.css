@@ -1,0 +1,12 @@
+.result-banner {
+  padding: 10px 14px; border-radius: 8px; font-weight: 600;
+  background: var(--accent); color: #fff;
+}
+/* A win and a draw are not the same news, so they are not the same colour. The
+   accent is the app's green; a drawn result steps back rather than shouting. */
+.result-banner[data-kind='stalemate'],
+.result-banner[data-kind='threefold'],
+.result-banner[data-kind='fiftyMove'],
+.result-banner[data-kind='insufficientMaterial'] {
+  background: var(--panel-fg);
+}
