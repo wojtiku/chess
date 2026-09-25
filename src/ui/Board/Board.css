@@ -1,0 +1,82 @@
+.board-wrap {
+  position: relative;
+  width: min(90vmin, 560px);
+}
+
+.board {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  aspect-ratio: 1;
+  border: 2px solid var(--board-border);
+}
+
+.square {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-size: min(7vmin, 42px);
+  line-height: 1;
+}
+
+.square.light {
+  background: var(--square-light);
+}
+
+.square.dark {
+  background: var(--square-dark);
+}
+
+.square:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+  z-index: 2;
+}
+
+.square[data-selected] {
+  background-image: var(--selected);
+}
+
+.square[data-last] {
+  background-image: var(--last-move);
+}
+
+.square[data-check] {
+  background-image: radial-gradient(circle, var(--check) 0%, transparent 70%);
+}
+
+/* A legal destination that takes nothing: a dot. */
+.square[data-target]::after {
+  content: '';
+  position: absolute;
+  width: 28%;
+  height: 28%;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+/* A legal destination that takes a piece: a ring, so the piece stays readable. */
+.square[data-target][data-capture]::after {
+  width: 84%;
+  height: 84%;
+  background: transparent;
+  border: 5px solid rgba(0, 0, 0, 0.28);
+}
+
+.piece {
+  position: relative;
+  z-index: 1;
+  /* The drop target is the square, not the glyph under the cursor. */
+  pointer-events: none;
+  user-select: none;
+}
+
+.arrows {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: rgba(60, 90, 200, 0.85);
+}

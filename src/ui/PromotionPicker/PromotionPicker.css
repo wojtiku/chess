@@ -1,0 +1,49 @@
+/* Anchored by the board, which knows where the destination square is. */
+.promotion-anchor {
+  position: absolute;
+  z-index: 5;
+  /* Sit just above the square the piece is landing on, and never off the board. */
+  transform: translate(-50%, -115%);
+}
+
+.promotion {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--panel-bg);
+  border: 1px solid var(--board-border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+
+.promotion button {
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--panel-fg);
+  cursor: pointer;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.promotion button:hover {
+  background: var(--selected);
+}
+
+.promotion button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.promotion .promotion-cancel {
+  min-width: 26px;
+  font-size: 20px;
+  color: var(--panel-fg);
+  border-left: 1px solid var(--board-border);
+}
