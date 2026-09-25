@@ -16,7 +16,8 @@
 //    that side is mated in |N|. `pickHint` puts the two on one scale before
 //    comparing them; `classify` keeps them apart and decides mate cases first.
 
-import type { EngineFailureCode, PvLine, SearchResult } from '../engine/engineClient';
+import { RETRYABLE_ENGINE_CODES } from '../engine/engineClient';
+import type { PvLine, SearchResult } from '../engine/engineClient';
 import { AnalysisCache } from './cache';
 
 export interface Analysis {
@@ -53,32 +54,28 @@ export interface EngineLike {
 export const DEFAULT_MULTI_PV = 5;
 export const DEFAULT_ANALYSIS_MOVETIME_MS = 3000;
 
-/** Spec §7.4: the worker dying is the one failure worth re-issuing, because it
- * is a fresh start rather than a verdict. `timeout` is not here (the client has
- * already thrown that worker away and a machine that slow will be slow again),
- * `superseded` is not here (a newer search already owns the engine, and
- * retrying would supersede *it*), and `disposed` is terminal by construction.
- *
- * Spelled out rather than read off `err.retryable`, so the policy is legible
- * here; `evaluate.test.ts` asserts this set is exactly the set the client calls
- * retryable, so the two cannot drift. */
-const RETRYABLE_CODES: ReadonlySet<string> = new Set<EngineFailureCode>([
-  'worker-died',
-  'handshake-timeout',
-]);
-
 /** Whether a rejection from `search` is worth one more try.
  *
  * Read structurally rather than with `instanceof EngineError`: the code is the
  * contract, and a caller that wraps the client (or a test) should not have to
  * import the class to get the retry. A non-object, a missing code and a
  * non-string code are all "not retryable" — the default for anything
- * unrecognised is to tell the caller, not to spend a second search. */
+ * unrecognised is to tell the caller, not to spend a second search.
+ *
+ * The set is `engineClient`'s, not a copy of it. That module is the one that
+ * knows what each failure *means*, so re-deciding the policy here is how the two
+ * would drift: a new retryable code would be added to the engine and have to be
+ * remembered here, and nothing would say so. `RETRYABLE_ENGINE_CODES` is exported
+ * for exactly this, and `evaluate.test.ts` walks
+ * `ALL_ENGINE_FAILURE_CODES` asserting the two agree in both directions. */
 function isRetryableFailure(e: unknown): boolean {
   if (typeof e !== 'object' || e === null) return false;
   const { code } = e as { code?: unknown };
-  return typeof code === 'string' && RETRYABLE_CODES.has(code);
+  return typeof code === 'string' && RETRYABLE_ENGINE_CODES.has(code);
 }
+
+/** Lets a queued search run whether or not the one before it worked. */
+const regardless = (): void => {};
 
 export interface EngineSourceOptions {
   /** Injectable only so a test can observe the bound and the eviction order; the
@@ -92,13 +89,17 @@ export interface EngineSource {
 
 export function makeEngineSource(client: EngineLike, options: EngineSourceOptions = {}): EngineSource {
   const cache = options.cache ?? new AnalysisCache();
-  /** Searches in flight, so a second request for a position that is already
-   * being searched joins the first instead of issuing its own. `EngineClient`
-   * holds one search at a time and supersedes whatever it had, so two searches
-   * for the same position would make the first reject with `superseded` — the
-   * one code the retry must not touch — and hand the caller an error for a
-   * question that is already being answered. */
-  const inFlight = new Map<string, Promise<Analysis>>();
+  /** Searches in flight, keyed by **FEN alone**, because that is the unit the
+   * engine serialises on: `EngineClient` answers one search at a time and rejects
+   * the older with `superseded` when a newer one is issued.
+   *
+   * Keying this by the option-bearing cache key instead — which is what the
+   * first version did — looks correct and is not. The eval bar and the hint both
+   * target the current position, so they differ in `multiPv`, take different keys,
+   * and would issue two competing searches: the first rejects with `superseded`,
+   * a code the retry below deliberately does not touch, and the learner is shown
+   * an error for a question that was perfectly answerable. */
+  const inFlight = new Map<string, { key: string; promise: Promise<Analysis> }>();
 
   const cacheKey = (fen: string, multiPv: number, movetimeMs: number): string =>
     // The options are part of the key, not an afterthought: a 1-line eval-bar
@@ -117,9 +118,6 @@ export function makeEngineSource(client: EngineLike, options: EngineSourceOption
       // new one, and the cache read is what makes `get` refresh recency.
       const cached = cache.get(key);
       if (cached !== undefined) return cached;
-
-      const running = inFlight.get(key);
-      if (running !== undefined) return running;
 
       // One attempt is a cache write at most, no matter how many searches it
       // takes: the write happens on the single success path below, so a retry can
@@ -143,25 +141,57 @@ export function makeEngineSource(client: EngineLike, options: EngineSourceOption
           scoreCp: top?.scoreCp,
           scoreMate: top?.scoreMate,
           depth: result.depth,
-          // Copied so a caller that pushes onto the array cannot corrupt the
-          // cached entry, and frozen because every later caller of this FEN is
+          // Frozen all the way down, because every later caller of this FEN is
           // handed the very same object: a silent mutation here would become a
-          // wrong hint in a different part of the app.
-          lines: Object.freeze([...result.lines]),
+          // wrong hint in a different part of the app. The lines are copied and
+          // frozen individually because a shallow freeze of the array still left
+          // `lines[0].uci` writable. The `pv` string array inside each line is
+          // the one part left mutable, since `PvLine.pv` is a published
+          // `string[]` and narrowing it to `readonly` would ripple into
+          // `sanSequence`'s published signature.
+          lines: Object.freeze(result.lines.map((l) => Object.freeze({ ...l }))),
         });
         cache.set(key, analysis);
         return analysis;
       };
 
-      const promise = attempt();
-      inFlight.set(key, promise);
+      const running = inFlight.get(fen);
+      // The same question, already being answered: one object, one search.
+      //
+      // Only the most recent flight is kept, so a third request whose options
+      // match a *superseded-by-a-queue* predecessor's rather than the queued one's
+      // gets its own search after the queue instead of joining that predecessor.
+      // That costs one redundant search in a three-way mix nobody has asked for
+      // yet, and the alternative is a list of flights with its own eviction
+      // bookkeeping.
+      if (running !== undefined && running.key === key) return running.promise;
+
+      // A different question about a position the engine is already searching.
+      // Queue behind it rather than issuing a competing search: `EngineClient`
+      // supersedes the older one, and `superseded` is not retryable here, so a
+      // competing search would turn an answerable question into an error. The
+      // predecessor's outcome is deliberately ignored — a queued request has to
+      // run even if the search it waited for failed, or a hint asked for after a
+      // dead worker would inherit the worker's error forever.
+      //
+      // The queue is per position, not global: a search for a *different* position
+      // is still issued immediately, because that is the case where the engine's
+      // own contract is the right answer — the newer position owns the engine and
+      // the older caller is the one that should be superseded.
+      const promise =
+        running === undefined
+          ? attempt()
+          : running.promise.then(regardless, regardless).then(attempt);
+
+      const flight = { key, promise };
+      inFlight.set(fen, flight);
       // Released on both outcomes, so a failure leaves nothing that a later
       // request would join (it must search again, not inherit a dead promise)
       // and so a rejected attempt cannot become an unhandled rejection while it
-      // waits here. Identity-checked, in case a newer attempt for the same key
-      // ever replaced this one.
+      // waits here. Identity-checked, because a queued request replaces the entry
+      // for this FEN and must not be dropped when its predecessor settles.
       const release = (): void => {
-        if (inFlight.get(key) === promise) inFlight.delete(key);
+        if (inFlight.get(fen) === flight) inFlight.delete(fen);
       };
       return promise.then(
         (value) => {

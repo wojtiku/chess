@@ -168,6 +168,15 @@ describe('pickHint', () => {
     expect(pickHint(a, 'good', () => -5)!.uci).toBe('e2e4');
   });
 
+  it('falls back to the best line when the random source is not a number at all', () => {
+    // `Math.min(NaN, n)` is NaN, so the index is not a list position. This used
+    // to reach `toHint(undefined)` and throw on the render path; a hint about the
+    // best line is always a truthful answer, so that is what it returns.
+    const a = analysis([line('e2e4', 30), line('d2d4', 10)]);
+    expect(pickHint(a, 'good', () => Number.NaN)!.uci).toBe('e2e4');
+    expect(pickHint(a, 'good', () => Number.POSITIVE_INFINITY)!.uci).toBe('d2d4');
+  });
+
   // The engine reports multiPV lines in rank order, so `lines[0]` is the best
   // line by protocol. Pinned so a future re-ranking of `lines` cannot quietly
   // change what "best" means.

@@ -57,9 +57,10 @@ function scoreValue(l: PvLine): number | undefined {
  * `EngineClient` produces: `lines[0]` is the best line, and "best mode" is
  * defined as that line rather than as a re-scan of the list.
  *
- * `rand` is injectable so the choice is testable; it is expected to return a
- * value in [0, 1) and values outside that range are clamped rather than allowed
- * to index off the end of the pool. */
+ * `rand` is injectable so the choice is testable. It is expected to return a
+ * value in [0, 1); anything outside that range — including `NaN` from a broken
+ * source — yields no index, and an unresolvable pick falls back to the best
+ * line rather than throwing. */
 export function pickHint(a: Analysis, mode: HintMode, rand: () => number = Math.random): Hint | null {
   const best = a.lines[0];
   if (best === undefined) return null;
@@ -78,9 +79,14 @@ export function pickHint(a: Analysis, mode: HintMode, rand: () => number = Math.
     return bestValue - v <= GOOD_ENOUGH_CP;
   });
 
-  // Never empty: the filter always keeps `best` itself.
+  // `Math.min` clamps the top of the range; a `rand` that is negative, or `NaN`
+  // from a source that is not a real random number, produces an index that is not
+  // a list position at all. `?? best` catches that case, and the `length` guard
+  // covers the filter having found nothing. `best` is in hand either way, so
+  // there is never a reason to return nothing or to assert past a hole.
+  if (acceptable.length === 0) return toHint(a, best);
   const index = Math.max(0, Math.min(acceptable.length - 1, Math.floor(rand() * acceptable.length)));
-  return toHint(a, acceptable[index]!);
+  return toHint(a, acceptable[index] ?? best);
 }
 
 function toHint(a: Analysis, l: PvLine): Hint {
@@ -89,8 +95,14 @@ function toHint(a: Analysis, l: PvLine): Hint {
     // A PV that does not apply to `a.fen` truncates here rather than throwing:
     // `sanSequence` stops at the first move chess.js rejects, so a stale or
     // version-skewed line yields a short list instead of an exception on the
-    // render path. The `uci` is the engine's own judgement and is passed
-    // through unchanged even when the SAN is empty.
+    // render path. The `uci` is the engine's own judgement and is passed through
+    // unchanged even when the SAN is empty.
+    //
+    // This is about the *moves*, not the FEN: `sanSequence` still throws if
+    // `a.fen` itself is unparseable, which is deliberate. `analyze` never
+    // validates a FEN, so a caller that hands this function junk gets an
+    // exception from chess.js rather than a silently empty hint — the rules layer
+    // owns validation and there is no reason to duplicate or hide it here.
     san: sanSequence(a.fen, l.pv),
     scoreCp: l.scoreCp,
     scoreMate: l.scoreMate,

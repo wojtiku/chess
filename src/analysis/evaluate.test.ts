@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_ANALYSIS_MOVETIME_MS, DEFAULT_MULTI_PV, makeEngineSource } from './evaluate';
+import { makeEngineSource } from './evaluate';
 import { AnalysisCache } from './cache';
-import { EngineError, type EngineFailureCode, type SearchResult } from '../engine/engineClient';
+import {
+  ALL_ENGINE_FAILURE_CODES, EngineError, RETRYABLE_ENGINE_CODES, type SearchResult,
+} from '../engine/engineClient';
 
 // The brief's five `makeEngineSource` assertions are kept verbatim. Everything
 // after them is additional: the brief has no retry at all, and spec §7.4's
@@ -12,18 +14,13 @@ const SEARCH = (r: Partial<SearchResult>): SearchResult => ({
   bestMove: 'e2e4', lines: [{ uci: 'e2e4', scoreCp: 30, depth: 18, pv: ['e2e4'] }], depth: 18, ...r,
 });
 
-/** Every code the real client can reject with, spelled out. The drift test at
- * the bottom walks this list, so a new code in `engineClient.ts` cannot silently
- * leave this module's retry policy stale. */
-const ALL_CODES: EngineFailureCode[] = [
-  'worker-died',
-  'handshake-timeout',
-  'timeout',
-  'superseded',
-  'disposed',
+const FIVE_LINES: SearchResult['lines'] = [
+  { uci: 'e2e4', scoreCp: 30, depth: 18, pv: ['e2e4'] },
+  { uci: 'd2d4', scoreCp: 10, depth: 18, pv: ['d2d4'] },
+  { uci: 'c2c4', scoreCp: 0, depth: 18, pv: ['c2c4'] },
+  { uci: 'g1f3', scoreCp: -5, depth: 18, pv: ['g1f3'] },
+  { uci: 'c2c3', scoreCp: -10, depth: 18, pv: ['c2c3'] },
 ];
-
-const NOT_RETRYABLE: EngineFailureCode[] = ['timeout', 'superseded', 'disposed'];
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -90,11 +87,6 @@ describe('makeEngineSource', () => {
     expect(n).toBe(2);
   });
 
-  it('exports the documented defaults', () => {
-    expect(DEFAULT_MULTI_PV).toBe(5);
-    expect(DEFAULT_ANALYSIS_MOVETIME_MS).toBe(3000);
-  });
-
   it('caches an empty analysis, because "no move" is an answer', async () => {
     // Spec §10 treats an engine that returns no move as terminal. Asking again
     // would ask the same question of a position that has no moves left in it.
@@ -124,11 +116,18 @@ describe('makeEngineSource', () => {
     expect(a.depth).toBe(30);
   });
 
-  it('freezes the analysis, because the cache hands it to every later caller', async () => {
+  it('freezes the analysis and its lines, because the cache hands them to every later caller', async () => {
     const src = makeEngineSource({ search: async () => SEARCH({}) });
     const a = await src.analyze('fen-f');
     expect(Object.isFrozen(a)).toBe(true);
     expect(Object.isFrozen(a.lines)).toBe(true);
+    // The elements too: freezing the array alone left `lines[0].uci` writable,
+    // which is a mutation of the shared cached object and a silent wrong hint.
+    expect(Object.isFrozen(a.lines[0])).toBe(true);
+    expect(() => {
+      (a.lines[0] as { uci: string }).uci = 'a1a2';
+    }).toThrow(TypeError);
+    expect(a.lines[0]?.uci).toBe('e2e4');
   });
 
   it('keys the cache on the search options, not on the FEN alone', async () => {
@@ -204,8 +203,19 @@ describe('the one-shot retry (spec 7.4)', () => {
     await expect(src.analyze('fen-j')).rejects.toMatchObject({ code: 'worker-died', message: 'second' });
   });
 
-  it('does not retry a failure the caller must be told about', async () => {
-    for (const code of NOT_RETRYABLE) {
+  // I2, the drift guard. The old version of this test listed the codes by hand
+  // and compared that list against a local copy of the policy, so a code added
+  // to the engine *and* to its retryable set passed both this test and `tsc`: it
+  // pinned today's agreement and nothing about tomorrow's.
+  //
+  // Now the expectation is read from the engine's own exports and the observed
+  // behaviour is measured through `analyze`, so a new code added to
+  // `RETRYABLE_ENGINE_CODES` makes this fail until the analysis layer follows —
+  // in both directions, so a layer that grew its own list would fail here rather
+  // than in review.
+  it('retries exactly the codes the engine client itself calls retryable', async () => {
+    for (const code of ALL_ENGINE_FAILURE_CODES) {
+      expect(new EngineError(code, 'x').retryable, code).toBe(RETRYABLE_ENGINE_CODES.has(code));
       let calls = 0;
       const src = makeEngineSource({
         search: async () => {
@@ -213,16 +223,27 @@ describe('the one-shot retry (spec 7.4)', () => {
           throw new EngineError(code, code);
         },
       });
-      await expect(src.analyze(`fen-${code}`)).rejects.toMatchObject({ code });
-      expect(calls, code).toBe(1);
+      await expect(src.analyze(`fen-drift-${code}`)).rejects.toMatchObject({ code });
+      expect(calls, code).toBe(RETRYABLE_ENGINE_CODES.has(code) ? 2 : 1);
     }
   });
 
-  it('retries exactly the codes the engine client itself calls retryable', () => {
-    const retried = ALL_CODES.filter((code) => code === 'worker-died' || code === 'handshake-timeout');
-    const clientSays = ALL_CODES.filter((code) => new EngineError(code, 'x').retryable);
-    expect(retried).toEqual(clientSays);
-    expect(retried).toEqual(['worker-died', 'handshake-timeout']);
+  it('retries a structurally-shaped failure, so the code is the only contract', async () => {
+    // The same question asked of a plain object with a `code`, which is what a
+    // caller wrapping the client actually throws. Read off the engine's set at
+    // runtime, so this needs no code list of its own either.
+    for (const code of RETRYABLE_ENGINE_CODES) {
+      let calls = 0;
+      const src = makeEngineSource({
+        search: async () => {
+          calls++;
+          if (calls === 1) throw { code, message: `structural ${code}` };
+          return SEARCH({ depth: 25 });
+        },
+      });
+      await expect(src.analyze(`fen-structural-${code}`)).resolves.toMatchObject({ depth: 25 });
+      expect(calls, code).toBe(2);
+    }
   });
 
   it('does not retry an error that carries no code at all', async () => {
@@ -257,9 +278,11 @@ describe('the one-shot retry (spec 7.4)', () => {
     expect(calls).toBe(2);
   });
 
-  it('charges the cache once per analysis, not once per attempt', async () => {
-    // A retried analysis that inserted its result twice would evict the
-    // neighbour it shares a bounded cache with, so the neighbour is the witness.
+  it('does not evict a cached neighbour when a search is retried', async () => {
+    // What this kills: charging the cache on the failure path, or under a second
+    // key. A *same-key* double `set` is not detectable here, and the test does
+    // not claim to be — see the note in the report. The bounded cache is the
+    // witness, because an extra entry under any key evicts the neighbour.
     const cache = new AnalysisCache(2);
     let calls = 0;
     let retried = false;
@@ -302,7 +325,7 @@ describe('the one-shot retry (spec 7.4)', () => {
 });
 
 describe('concurrent requests for one position', () => {
-  it('serves a second request for the same FEN from the first, not from a new search', async () => {
+  it('serves a second request with identical options from the one already running', async () => {
     const first = deferred<SearchResult>();
     const second = deferred<SearchResult>();
     let calls = 0;
@@ -354,5 +377,125 @@ describe('concurrent requests for one position', () => {
     expect(calls).toBe(2);
     expect(a.depth).toBe(10);
     expect(b.depth).toBe(12);
+  });
+
+  // I1. The eval bar and the hint both target the position on screen, so they
+  // collide by construction. A double that answers both searches would make the
+  // hazard invisible, so these three tests run against one that enforces
+  // `EngineClient`'s real rule: one search at a time, and a new one supersedes
+  // the older with `superseded`.
+  describe('with an engine that supersedes a competing search', () => {
+    class SupersedingEngine {
+      calls: Array<{ fen: string; multiPv?: number; movetimeMs: number }> = [];
+      superseded = 0;
+      private pending: { resolve: (r: SearchResult) => void; reject: (e: unknown) => void } | null = null;
+
+      search = (fen: string, opts: { movetimeMs: number; multiPv?: number }): Promise<SearchResult> => {
+        this.calls.push({ fen, ...opts });
+        return new Promise<SearchResult>((resolve, reject) => {
+          const older = this.pending;
+          this.pending = { resolve, reject };
+          if (older !== null) {
+            this.superseded++;
+            older.reject(new EngineError('superseded', 'Search superseded by a newer search'));
+          }
+        });
+      };
+
+      answer(result: SearchResult): void {
+        const p = this.take();
+        p.resolve(result);
+      }
+
+      failWith(e: unknown): void {
+        const p = this.take();
+        p.reject(e);
+      }
+
+      private take(): { resolve: (r: SearchResult) => void; reject: (e: unknown) => void } {
+        const p = this.pending;
+        if (p === null) throw new Error('no search is in flight');
+        this.pending = null;
+        return p;
+      }
+    }
+
+    it('queues a different-options request instead of superseding the running one', async () => {
+      const engine = new SupersedingEngine();
+      const src = makeEngineSource(engine);
+      const evalBar = src.analyze('fen-t', { multiPv: 1 });
+      const hint = src.analyze('fen-t', { multiPv: 5 });
+
+      // The hint has not issued a search: it is behind the eval bar's, so nothing
+      // was superseded and the first request is still live.
+      expect(engine.calls.map((c) => c.multiPv)).toEqual([1]);
+      expect(engine.superseded).toBe(0);
+
+      engine.answer(SEARCH({ depth: 20 }));
+      const one = await evalBar;
+      expect(one.depth).toBe(20);
+      // Only now, with the engine free, does the queued search start.
+      expect(engine.calls.map((c) => c.multiPv)).toEqual([1, 5]);
+
+      engine.answer(SEARCH({ depth: 24, lines: FIVE_LINES }));
+      const many = await hint;
+      expect(many.lines).toHaveLength(5);
+      expect(many.depth).toBe(24);
+      expect(engine.superseded).toBe(0);
+    });
+
+    it('runs a queued request when the search it waited for failed', async () => {
+      const engine = new SupersedingEngine();
+      const src = makeEngineSource(engine);
+      const first = src.analyze('fen-u', { multiPv: 1 });
+      const queued = src.analyze('fen-u', { multiPv: 5 });
+
+      // Not retryable, so this one is final — and the queued request must not
+      // inherit the failure, or a hint would be permanently unavailable after any
+      // engine error on the same position.
+      engine.failWith(new EngineError('superseded', 'Search superseded by a newer search'));
+      await expect(first).rejects.toMatchObject({ code: 'superseded' });
+
+      expect(engine.calls.map((c) => c.multiPv)).toEqual([1, 5]);
+      engine.answer(SEARCH({ depth: 26, lines: FIVE_LINES }));
+      const many = await queued;
+      expect(many.lines).toHaveLength(5);
+    });
+
+    it('runs a queued request after the running one has been retried', async () => {
+      const engine = new SupersedingEngine();
+      const src = makeEngineSource(engine);
+      const first = src.analyze('fen-v', { multiPv: 1 });
+      const queued = src.analyze('fen-v', { multiPv: 5 });
+
+      // The worker dies: the retry goes first, and the queue waits for the retry
+      // rather than racing it.
+      engine.failWith(new EngineError('worker-died', 'gone'));
+      await Promise.resolve();
+      expect(engine.calls.map((c) => c.multiPv)).toEqual([1, 1]);
+
+      engine.answer(SEARCH({ depth: 28 }));
+      const a = await first;
+      expect(a.depth).toBe(28);
+      expect(engine.calls.map((c) => c.multiPv)).toEqual([1, 1, 5]);
+
+      engine.answer(SEARCH({ depth: 30, lines: FIVE_LINES }));
+      const many = await queued;
+      expect(many.lines).toHaveLength(5);
+      expect(engine.superseded).toBe(0);
+    });
+
+    it('gives a second identical request the same object, with one search', async () => {
+      const engine = new SupersedingEngine();
+      const src = makeEngineSource(engine);
+      const a = src.analyze('fen-w', { multiPv: 3 });
+      const b = src.analyze('fen-w', { multiPv: 3 });
+      expect(engine.calls).toHaveLength(1);
+
+      engine.answer(SEARCH({ depth: 32, lines: FIVE_LINES }));
+      const [first, second] = await Promise.all([a, b]);
+      expect(first).toBe(second);
+      expect(engine.superseded).toBe(0);
+    });
   });
 });

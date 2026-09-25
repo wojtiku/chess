@@ -35,6 +35,17 @@ const SEARCH_TIMEOUT_SLACK_MS = 10_000;
  * 20, and Medium is the default. */
 const DEFAULT_SKILL_LEVEL = 8;
 
+/** Every code, in one place: the union is derived from the list rather than
+ * written beside it, so a new failure mode cannot be added to one and forgotten
+ * in the other, and `ALL_ENGINE_FAILURE_CODES` cannot fall behind the type. */
+const FAILURE_CODES = [
+  'worker-died',
+  'handshake-timeout',
+  'timeout',
+  'superseded',
+  'disposed',
+] as const;
+
 /** Why a request failed, in a form a caller can branch on.
  *
  * `worker-died` and `handshake-timeout` are the engine being unavailable, which
@@ -45,14 +56,24 @@ const DEFAULT_SKILL_LEVEL = 8;
  * machine slow enough to blow `movetime + 10s` once will do it again — the
  * caller is better served by an error it can show than by a silent second wait
  * of the same length. */
-export type EngineFailureCode =
-  | 'worker-died'
-  | 'handshake-timeout'
-  | 'timeout'
-  | 'superseded'
-  | 'disposed';
+export type EngineFailureCode = (typeof FAILURE_CODES)[number];
 
-const RETRYABLE: ReadonlySet<EngineFailureCode> = new Set<EngineFailureCode>([
+/** The same codes as a list, so a caller can walk every one of them — the
+ * analysis layer's retry policy is asserted against this list rather than
+ * against a hand-written copy of the union, which is how the two used to be
+ * able to drift apart silently. */
+export const ALL_ENGINE_FAILURE_CODES: readonly EngineFailureCode[] = FAILURE_CODES;
+
+/** Which failures are worth re-issuing: the engine is *unavailable*, not
+ * undecided. Exported because that judgement belongs here — this module knows
+ * what each failure means — and a caller that re-implements it is a caller that
+ * can drift from it.
+ *
+ * Typed as `ReadonlySet<string>` so a caller holding an `unknown` rejection can
+ * ask the question with a plain string and no cast, while the *values* are built
+ * from the union so dropping a code from `EngineFailureCode` is a compile error
+ * rather than a silently stale set. */
+export const RETRYABLE_ENGINE_CODES: ReadonlySet<string> = new Set<EngineFailureCode>([
   'worker-died',
   'handshake-timeout',
 ]);
@@ -69,7 +90,7 @@ export class EngineError extends Error {
     super(message, options);
     this.name = 'EngineError';
     this.code = code;
-    this.retryable = RETRYABLE.has(code);
+    this.retryable = RETRYABLE_ENGINE_CODES.has(code);
   }
 }
 
