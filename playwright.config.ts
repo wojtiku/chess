@@ -20,8 +20,12 @@ export default defineConfig({
     // `emptyOutDir: false`) so the test can reach the real `EngineClient` — a
     // production build serves no TypeScript, so there is no other way in. And
     // `preview` serves the result, engine assets included, from one origin.
+    //
+    // `--strictPort` so that if 4173 is taken the command fails immediately and
+    // says so, rather than `vite` quietly binding 4174 and leaving Playwright to
+    // spin for the full 180s on a timeout that reads like a build problem.
     command:
-      'npm run build && npx vite build --config e2e.harness.vite.config.ts && npm run preview -- --port 4173',
+      'npm run build && npx vite build --config e2e.harness.vite.config.ts && npm run preview -- --port 4173 --strictPort',
     url: 'http://localhost:4173',
     reuseExistingServer: false,
     timeout: 180_000,

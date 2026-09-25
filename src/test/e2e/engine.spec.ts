@@ -136,6 +136,10 @@ test('the production server does not serve the app as source', async ({ page }) 
   // an accident of the fallback. What matters is that no JavaScript module
   // comes back, so the passing probe above can only have run a real bundle.
   const response = await page.request.get('/src/engine/engineClient.ts');
-  expect(response.headers()['content-type']).not.toMatch(/javascript/);
+  // `?? ''` rather than a bare `headers()['content-type']`: a host that omits the
+  // header entirely would hand `undefined` to `toMatch`, which raises a matcher
+  // type error and reads as a crash. Coerced, the same host produces an ordinary
+  // assertion failure naming the missing header.
+  expect(response.headers()['content-type'] ?? '').not.toMatch(/javascript/);
   expect(await response.text()).not.toContain('class EngineClient');
 });
