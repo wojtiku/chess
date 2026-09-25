@@ -44,6 +44,18 @@ function focusSquare(square: string): void {
 const targets = () => document.querySelectorAll('[data-target]');
 const captures = () => document.querySelectorAll('[data-capture]');
 
+// Written out here rather than imported from `pieces.ts`: a test that reuses the
+// lookup table it is checking cannot fail. These are the spoken names and the
+// standard Unicode chess symbols.
+const PIECE_NAMES: Readonly<Record<string, string>> = {
+  p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king',
+};
+
+const PIECE_GLYPHS: Readonly<Record<string, string>> = {
+  wp: '♙', wn: '♘', wb: '♗', wr: '♖', wq: '♕', wk: '♔',
+  bp: '♟', bn: '♞', bb: '♝', br: '♜', bq: '♛', bk: '♚',
+};
+
 describe('Board', () => {
   describe('rendering', () => {
     it('renders 64 squares inside a named grid', () => {
@@ -52,24 +64,63 @@ describe('Board', () => {
       expect(within(grid).getAllByRole('button')).toHaveLength(64);
     });
 
-    it('names each square "<square>, <piece>" for the square it is on', () => {
+    it('names all 32 starting pieces "<square>, <colour> <piece>", each on its own square', () => {
       setup();
-      const expected: ReadonlyArray<readonly [string, string]> = [
-        ['a1', 'a1, white rook'],
-        ['b1', 'b1, white knight'],
-        ['d1', 'd1, white queen'],
-        ['e1', 'e1, white king'],
-        ['e2', 'e2, white pawn'],
-        ['e4', 'e4, empty'],
-        ['a8', 'a8, black rook'],
-        ['d8', 'd8, black queen'],
-        ['e8', 'e8, black king'],
-        ['e7', 'e7, black pawn'],
-        ['h1', 'h1, white rook'],
-        ['h8', 'h8, black rook'],
-      ];
-      for (const [square, name] of expected) {
+      // Every piece on the board, not a sample of them: a 12-row sample left the
+      // bishops unlabelled by any assertion, and a mislabelled bishop is a bishop a
+      // screen reader calls a knight. The expected name is built here, from the
+      // rules layer, and each one is checked against the square it claims to be on —
+      // so a label attached to the wrong square fails too.
+      const expected = new Chess()
+        .board()
+        .flat()
+        .filter((cell) => cell !== null)
+        .map((cell) => ({
+          square: cell.square,
+          name: `${cell.square}, ${cell.color === 'w' ? 'white' : 'black'} ${PIECE_NAMES[cell.type]}`,
+        }));
+      expect(expected).toHaveLength(32);
+      for (const { square, name } of expected) {
         expect(screen.getByRole('button', { name }), name).toHaveAttribute('data-square', square);
+      }
+    });
+
+    it('labels every occupied square and no empty one as a piece', () => {
+      setup();
+      const labelled = screen
+        .getAllByRole('button')
+        .map((button) => button.getAttribute('aria-label'))
+        .filter((name) => name !== null && !name.endsWith(', empty'))
+        .sort();
+      expect(labelled).toHaveLength(32);
+      expect(new Set(labelled).size).toBe(32);
+    });
+
+    it('draws the starting pieces with their own glyphs', () => {
+      setup();
+      // The glyph table, not a sample of three: a rook drawn as a queen is
+      // invisible to a test that only checks a king, a queen and a pawn.
+      const expected = new Chess()
+        .board()
+        .flat()
+        .filter((cell) => cell !== null)
+        .map((cell) => `${cell.square}:${PIECE_GLYPHS[`${cell.color}${cell.type}`]}`);
+      for (const entry of expected) {
+        const [square, glyph] = entry.split(':');
+        expect(pieceEl(square ?? '')?.textContent, square).toBe(glyph);
+      }
+      const drawn = expected.map((entry) => entry.split(':')[1]);
+      // White and black versions of a piece are different symbols, so all 32 are.
+      expect(new Set(drawn).size).toBe(12);
+    });
+
+    it('names each empty square "<square>, empty"', () => {
+      setup();
+      for (const square of ['a4', 'e4', 'h4', 'd6', 'b6']) {
+        expect(screen.getByRole('button', { name: `${square}, empty` })).toHaveAttribute(
+          'data-square',
+          square,
+        );
       }
     });
 
@@ -85,11 +136,8 @@ describe('Board', () => {
       }
     });
 
-    it('draws a piece glyph for every piece on the board', () => {
+    it('draws nothing on an empty square', () => {
       setup();
-      expect(pieceEl('e1')?.textContent).toBe('♔');
-      expect(pieceEl('d8')?.textContent).toBe('♛');
-      expect(pieceEl('e7')?.textContent).toBe('♟');
       expect(pieceEl('e4')).toBeNull();
     });
 
@@ -287,8 +335,23 @@ describe('Board', () => {
       expect(document.querySelectorAll('[data-check]')).toHaveLength(1);
     });
 
+    // `statusOf` reports checkmate as its own status kind with no `check` field, so
+    // gating the glow on "still playing" would leave the mated king unlit — at the
+    // one moment the king most needs to be obvious.
+    it('marks a mated king, because a king in check is in check whoever is winning', () => {
+      setup({ game: new Chess("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3") });
+      expect(sq('e1')).toHaveAttribute('data-check', 'true');
+      expect(sq('e8')).not.toHaveAttribute('data-check');
+      expect(document.querySelectorAll('[data-check]')).toHaveLength(1);
+    });
+
     it('marks no king when nobody is in check', () => {
       setup({ game: new Chess(NO_CHECK_FEN) });
+      expect(document.querySelectorAll('[data-check]')).toHaveLength(0);
+    });
+
+    it('marks no king in a stalemate, which is not check', () => {
+      setup({ game: new Chess('7k/5Q2/6K1/8/8/8/8/8 b - - 0 1') });
       expect(document.querySelectorAll('[data-check]')).toHaveLength(0);
     });
 
@@ -363,7 +426,7 @@ describe('Board', () => {
       expect(onMove).toHaveBeenCalledWith({ from: 'e4', to: 'd5' });
     });
 
-    it('cancels a drop that lands off the grid instead of guessing a square', () => {
+    it('cancels a drop that lands on the grid but not on a square', () => {
       // The knight's only legal destination is a8, which is also the first square
       // in render order — so a handler that fell back to "some square" instead of
       // "no square" would move the knight and be caught here.
@@ -378,17 +441,29 @@ describe('Board', () => {
       expect(onMove).not.toHaveBeenCalled();
     });
 
-    it('keeps the selection when a drop lands off the grid', async () => {
-      // Dropped on the grid but not on a square. A cancelled drop is not an illegal
-      // move, so the selection survives it: only the illegal case drops it. Here the
-      // pawn's own destination, e4, is also what a naive fallback would guess, so
-      // guessing would show up as a move as well as a lost selection.
+    it('keeps the selection when a drop lands on the grid but not on a square', async () => {
+      // A cancelled drop is not an illegal move, so the selection survives it: only
+      // the illegal case drops it. Here the pawn's own destination, e4, is also what
+      // a naive fallback would guess, so guessing would show up as a move as well as
+      // a lost selection.
       const { onMove, user } = setup();
       await user.click(sq('e2'));
       fireEvent.dragStart(sq('e2'));
       fireEvent.drop(screen.getByRole('grid'));
       expect(onMove).not.toHaveBeenCalled();
       expect(sq('e2')).toHaveAttribute('data-selected', 'true');
+    });
+
+    it('ignores a drop onto the promotion popover, which is not a board square', async () => {
+      // A sibling of the grid rather than a square inside it, so a drop there is
+      // nobody's business. Kept as a guard against the popover being moved inside
+      // the grid later, which would make this drop resolvable.
+      const { onMove, user } = setup({ game: new Chess(PROMOTION_FEN) });
+      await user.click(sq('a7'));
+      await user.click(sq('a8'));
+      fireEvent.dragStart(sq('a5'));
+      fireEvent.drop(screen.getByRole('dialog', { name: 'Choose promotion piece' }));
+      expect(onMove).not.toHaveBeenCalled();
     });
 
     it('drops the options when the parent takes the board away mid-selection', async () => {
@@ -666,6 +741,51 @@ describe('Board', () => {
       await user.click(screen.getByRole('button', { name: 'Promote to bishop' }));
       await user.keyboard('{Escape}');
       expect(onMove).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores a click on the board while the picker is open', async () => {
+      // The picker is the only question the board is asking, so a second click must
+      // not start a second move. The e1 king is a real, legal click when no picker
+      // is open, which is what makes this a guard and not a dead board.
+      const { onMove, user } = setup({ game: new Chess(PROMOTION_FEN) });
+      await user.click(sq('a7'));
+      await user.click(sq('a8'));
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+      await user.click(sq('e1'));
+      expect(sq('e1')).not.toHaveAttribute('data-selected');
+      // The only destination still on offer is the one being asked about.
+      expect([...targets()].map((el) => el.getAttribute('data-square'))).toEqual(['a8']);
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(onMove).not.toHaveBeenCalled();
+
+      // Once answered, the same click works again.
+      await user.click(screen.getByRole('button', { name: 'Promote to queen' }));
+      expect(onMove).toHaveBeenCalledWith({ from: 'a7', to: 'a8', promotion: 'q' });
+      await user.click(sq('e1'));
+      expect(sq('e1')).toHaveAttribute('data-selected', 'true');
+    });
+
+    it('ignores a drop onto the board while the picker is open', () => {
+      // The same guard on the drag path, where nothing about the drop says the board
+      // is busy: Ke1-d1 is a real move when the picker is closed.
+      const { onMove } = setup({ game: new Chess(PROMOTION_FEN) });
+      fireEvent.dragStart(sq('a7'));
+      fireEvent.drop(sq('a8'));
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+      fireEvent.dragStart(sq('e1'));
+      fireEvent.drop(sq('d1'));
+      expect(onMove).not.toHaveBeenCalled();
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+      // Answer the promotion, and the drag works again.
+      fireEvent.click(screen.getByRole('button', { name: 'Promote to queen' }));
+      expect(onMove).toHaveBeenCalledWith({ from: 'a7', to: 'a8', promotion: 'q' });
+      onMove.mockClear();
+      fireEvent.dragStart(sq('e1'));
+      fireEvent.drop(sq('d1'));
+      expect(onMove).toHaveBeenCalledWith({ from: 'e1', to: 'd1' });
     });
   });
 });

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { Square } from 'chess.js';
+import { Chess } from '../../chess/rules';
 import { FILES, RANKS, displaySquares, squareColor, stepSquare, type ArrowKey } from './squares';
 
 const ALL_SQUARES = RANKS.flatMap((rank) => FILES.map((file) => `${file}${rank}`));
@@ -17,30 +19,57 @@ function northOf(square: string): string | null {
 }
 
 describe('squareColor', () => {
-  it('is light on a1 and dark on h1', () => {
-    expect(squareColor('a1')).toBe('light');
-    expect(squareColor('h1')).toBe('dark');
+  // The standard convention, and the one `chess.js` uses: a1 is dark, h1 is light,
+  // and each side's queen starts on her own colour (d1 light, d8 dark). The
+  // literals below are a readable sample; `agrees with the rules library on every
+  // square` is what actually pins the convention.
+  it('is dark on a1 and light on h1', () => {
+    expect(squareColor('a1')).toBe('dark');
+    expect(squareColor('h1')).toBe('light');
   });
 
-  it('is dark on a8', () => {
-    expect(squareColor('a8')).toBe('dark');
+  it('is light on a8', () => {
+    expect(squareColor('a8')).toBe('light');
   });
 
-  // The brief asserted 'light' here. With a1 light, e4 is an odd number of steps
-  // away (4 files + 3 ranks) and must therefore be dark: a1, h1 and a8 are
-  // mutually consistent and e4 was the odd one out. In standard chess (a1 dark)
-  // e4 is light, but then h1 and a8 are not dark either.
-  it('is dark on e4, because a1 light and e4 differ by an odd number of steps', () => {
-    expect(squareColor('e4')).toBe('dark');
+  it('is light on e4', () => {
+    expect(squareColor('e4')).toBe('light');
   });
 
   it('colours the rest of the board', () => {
-    expect(squareColor('b1')).toBe('dark');
-    expect(squareColor('d1')).toBe('dark');
-    expect(squareColor('e1')).toBe('light');
-    expect(squareColor('a2')).toBe('dark');
-    expect(squareColor('d4')).toBe('light');
-    expect(squareColor('h8')).toBe('light');
+    expect(squareColor('b1')).toBe('light');
+    expect(squareColor('d1')).toBe('light');
+    expect(squareColor('e1')).toBe('dark');
+    expect(squareColor('a2')).toBe('light');
+    expect(squareColor('d4')).toBe('dark');
+    expect(squareColor('h8')).toBe('dark');
+  });
+
+  // The defence against the convention drifting. The sample above can be edited to
+  // agree with a wrong board; this cannot, because chess.js is the library the
+  // position itself comes from and it follows the standard convention.
+  it('agrees with the rules library on every square', () => {
+    const game = new Chess();
+    for (const square of ALL_SQUARES) {
+      // The cast is the same narrowing the rules layer does at the library boundary:
+      // chess.js types a square as a 64-value union, and `ALL_SQUARES` is built from
+      // the same file and rank lists, so every one of these is a real square.
+      expect(squareColor(square), square).toBe(game.squareColor(square as Square));
+    }
+  });
+
+  it('puts each queen on her own colour, as on every real board', () => {
+    const game = new Chess();
+    for (const cell of game.board().flat()) {
+      if (cell?.type !== 'q') continue;
+      expect(game.squareColor(cell.square), cell.square).toBe(cell.color === 'w' ? 'light' : 'dark');
+    }
+  });
+
+  it('keeps the a1–h8 diagonal one colour throughout, and dark', () => {
+    for (const square of ['a1', 'b2', 'c3', 'd4', 'e5', 'f6', 'g7', 'h8']) {
+      expect(squareColor(square), square).toBe('dark');
+    }
   });
 
   it('splits the board 32 light and 32 dark', () => {
@@ -48,6 +77,8 @@ describe('squareColor', () => {
     expect(light).toHaveLength(32);
   });
 
+  // Tautological about the convention — it passes under either — but it still
+  // catches an off-by-one in the index arithmetic, which the anchor alone would not.
   it('flips colour on every step right or up', () => {
     for (const square of ALL_SQUARES) {
       const east = eastOf(square);
@@ -90,12 +121,14 @@ describe('displaySquares', () => {
     }
   });
 
-  it('starts on a dark square and alternates across the first row', () => {
+  it('starts on a light square and alternates across the first row', () => {
     const squares = displaySquares('w');
-    expect(squares[0]?.light).toBe(false);
-    expect(squares[1]?.light).toBe(true);
-    expect(squares[2]?.light).toBe(false);
-    expect(squares[7]?.light).toBe(true);
+    // a8 is light on a standard board, and h1 — the far corner of that same row
+    // eight rows down — is light too, which is the "lighter on the right" rule.
+    expect(squares[0]?.light).toBe(true);
+    expect(squares[1]?.light).toBe(false);
+    expect(squares[2]?.light).toBe(true);
+    expect(squares[7]?.light).toBe(false);
   });
 
   it('agrees with squareColor on every square in both orientations', () => {

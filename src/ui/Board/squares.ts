@@ -29,13 +29,17 @@ function rankNumber(square: string): number {
 }
 
 /**
- * a1 is light. That is the lichess convention, and it is the one this app's
- * colours are written for; the important part is that it is a *choice*, and that
- * it is applied consistently: e4 is therefore dark, because a1 light and e4 are
- * an odd number of steps apart (4 files, 3 ranks) and every step flips colour.
+ * a1 is dark and h1 is light: the standard convention, and the one `chess.js` uses,
+ * so this board and the library the position comes from cannot disagree about it.
+ * Two properties follow, and both are what a player already expects without being
+ * told: "lighter on the right", and each side's queen starting on her own colour
+ * (d1 light, d8 dark).
+ *
+ * `squares.test.ts` anchors this to `Chess.squareColor` over all 64 squares, so the
+ * library defines the convention rather than a list of literals here.
  */
 export function squareColor(square: string): 'light' | 'dark' {
-  return (fileIndex(square) + rankNumber(square)) % 2 === 0 ? 'dark' : 'light';
+  return (fileIndex(square) + rankNumber(square)) % 2 === 0 ? 'light' : 'dark';
 }
 
 export interface DisplaySquare {

@@ -1,7 +1,7 @@
 import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, KeyboardEvent } from 'react';
-import type { Chess, Move } from '../../chess/rules';
-import { legalMovesVerbose, statusOf } from '../../chess/rules';
+import type { Chess } from '../../chess/rules';
+import { legalMovesVerbose, parsePromotion } from '../../chess/rules';
 import { displaySquares, stepSquare, type ArrowKey, type Orientation } from './squares';
 import { arrowEnds, squareCentre, type BoardArrow } from './arrows';
 import { pieceGlyph, pieceLabel } from './pieces';
@@ -89,8 +89,9 @@ function squareUnderPointer(event: DragEvent, board: HTMLElement | null): string
   const target = event.target;
   if (!(target instanceof Element)) return null;
   const square = target.closest('[data-square]');
-  // Scoped to the grid, so the promotion picker's own `data-square` (and anything
-  // else with a square in its name) can never be mistaken for a board square.
+  // Scoped to the grid. The promotion popover is a sibling of the grid and carries a
+  // square name of its own for anchoring, so without this a drop onto the popover
+  // would resolve to a board square that the pointer was never over.
   if (square === null || board === null || !board.contains(square)) return null;
   return square.getAttribute('data-square');
 }
@@ -122,16 +123,18 @@ export default function Board({
 
   // `game` is a mutable instance, so its identity does not change when a move is
   // played and a memo keyed on it alone would keep serving the old position. The
-  // FEN does change — and it changes for everything the derived values below
-  // depend on, including the fifty-move clock, and for a repetition too, because
-  // the fullmove number has moved on by the time a position comes back.
+  // FEN does change whenever the position does, which is all the pieces map below
+  // depends on.
   const position = game.fen();
-  const status = useMemo(() => statusOf(game), [position, game]);
   const pieces = useMemo(() => piecesBySquare(game), [position, game]);
   const squares = useMemo(() => displaySquares(orientation), [orientation]);
 
   const turn = game.turn();
-  const checkSquare = status.kind === 'playing' && status.check ? findKing(pieces, turn) : null;
+  // `inCheck()` rather than `statusOf(...).check`, because `checkmate` is a
+  // terminal status with no `check` field: gating on `kind === 'playing'` would
+  // leave the mated king unlit, and a mated king in check is the one position
+  // whose king most needs to be obvious.
+  const checkSquare = game.inCheck() ? findKing(pieces, turn) : null;
   const targets = destinations(game, selected, interactive);
   const [firstSquare] = squares;
   const focusAnchor = tabStop ?? firstSquare?.square;
@@ -158,7 +161,7 @@ export default function Board({
         setPendingPromotion({ from, to });
         return;
       }
-      const promotion = first.promotion as Move['promotion'] | undefined;
+      const promotion = parsePromotion(first.promotion);
       onMove({ from, to, ...(promotion ? { promotion } : {}) });
       clearSelection();
     },

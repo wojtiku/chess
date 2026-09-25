@@ -12,7 +12,9 @@ const PROMOTION_PIECES = ['q', 'r', 'b', 'n'] as const;
 // `promotion` is the four promotable pieces. Both are narrowed here, at the
 // library boundary. The character is checked rather than cast, because
 // `uciToMove` feeds this from untrusted engine PV lines.
-function parsePromotion(piece: string | undefined): Move['promotion'] {
+// Exported so that callers holding a raw chess.js `PieceSymbol` can narrow it the
+// same way this module does, rather than asserting the type at the point of use.
+export function parsePromotion(piece: string | undefined): Move['promotion'] {
   return PROMOTION_PIECES.find((p) => p === piece);
 }
 
