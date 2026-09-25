@@ -122,6 +122,10 @@ export class EngineClient {
    * must join one `uci`/`isready` handshake instead of overwriting each other's
    * slot and orphaning a promise forever. */
   private booting: Promise<void> | null = null;
+  /** Set by `dispose()` and never cleared. A disposed client is finished; every
+   * entry point refuses to start new work, so a boot interrupted mid-handshake
+   * cannot resurrect it. */
+  private disposed = false;
   private handshake: Handshake | null = null;
   private readonly subscribers = new Set<(s: EngineStatus) => void>();
 
@@ -162,6 +166,13 @@ export class EngineClient {
   private ensureWorker(): Worker {
     const existing = this.worker;
     if (existing !== null) return existing;
+
+    // Terminal. `dispose` means "this client is finished", not "start over": the
+    // spec pairs it with unmount, and a client that rebuilt itself would
+    // resurrect an engine the caller believes it has torn down. Refusing here is
+    // what makes the invariant hold — no code path can construct a worker after
+    // disposal, however it was reached.
+    if (this.disposed) throw new EngineError('disposed', 'Engine client disposed');
 
     this.setStatus('loading');
     // No '#' in the URL. The engine reads `location.hash` itself: a hash makes it
@@ -446,6 +457,16 @@ export class EngineClient {
   }
 
   dispose(): void {
+    // Set first, before anything else, and synchronously. `uciok` and `readyok`
+    // arrive as separate messages, so there is a microtask boundary between the
+    // boot's two `waitFor` calls where `this.handshake` is null and the boot is
+    // still live. Disposing there used to reject nothing, and the resumed boot
+    // then called `ensureWorker` — which built a *second* worker, because this
+    // one had just been nulled — and re-handshaked against it, leaving the
+    // caller's promise unsettled forever. The flag makes that respawn impossible
+    // and the boot rejects on its next `ensureWorker` instead.
+    this.disposed = true;
+
     // Reject first: a caller awaiting a search or a boot must not hang on a
     // promise whose worker has just been terminated. A joining boot is rejected
     // through the same handshake, so it settles too.

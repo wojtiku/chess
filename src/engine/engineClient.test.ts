@@ -942,16 +942,23 @@ describe('EngineClient', () => {
       expect(w.terminated).toBe(true);
     });
 
-    it('survives a search issued after dispose()', async () => {
+    it('refuses a search issued after dispose() instead of resurrecting the client', async () => {
       const c = new EngineClient();
       const first = await bootNewGame(c);
       c.dispose();
+      const createdAfterDispose = FakeWorker.created;
 
-      const { p, w } = await boot(c, { movetimeMs: 50 });
-      expect(w).not.toBe(first);
+      // `dispose` is terminal: the spec pairs it with unmount, and a client that
+      // rebuilt itself would resurrect an engine the caller believes it has torn
+      // down. No second worker, and the caller is told why.
+      const p = c.search(START_FEN, { movetimeMs: 50 });
 
-      w.emit('bestmove e2e4');
-      await expect(p).resolves.toMatchObject({ bestMove: 'e2e4' });
+      await expect(within(p, 'search after dispose')).rejects.toMatchObject({
+        code: 'disposed',
+        retryable: false,
+      });
+      expect(FakeWorker.created).toBe(createdAfterDispose);
+      expect(first.terminated).toBe(true);
       c.dispose();
     });
   });
@@ -1195,6 +1202,133 @@ describe('EngineClient', () => {
         retryable: true,
         message: 'Engine worker error',
       });
+      c.dispose();
+    });
+  });
+
+  describe('dispose is terminal', () => {
+    it('rejects a boot interrupted between uciok and readyok, and builds no second worker', async () => {
+      const c = new EngineClient();
+      const p = c.newGame();
+      swallow(p);
+      const w = FakeWorker.last!;
+      await w.waitForSent(/^uci$/);
+      expect(FakeWorker.created).toBe(1);
+
+      // `uciok` resolves the first waitFor, so the boot sits on a microtask
+      // boundary with `this.handshake` null and its promise still live. That gap
+      // is where dispose used to reject nothing and let the resumed boot build a
+      // replacement worker.
+      w.emit('uciok');
+      c.dispose();
+      w.emit('readyok');
+      await flush();
+
+      await expect(within(p, 'boot interrupted by dispose')).rejects.toMatchObject({
+        code: 'disposed',
+        retryable: false,
+      });
+      expect(FakeWorker.created).toBe(1);
+      expect(c.status).toBe('idle');
+      c.dispose();
+    });
+
+    it('rejects a search interrupted between uciok and readyok', async () => {
+      const c = new EngineClient();
+      const p = c.search(START_FEN, { movetimeMs: 50 });
+      swallow(p);
+      const w = FakeWorker.last!;
+      await w.waitForSent(/^uci$/);
+
+      w.emit('uciok');
+      c.dispose();
+      w.emit('readyok');
+      await flush();
+
+      await expect(within(p, 'search interrupted by dispose')).rejects.toMatchObject({
+        code: 'disposed',
+      });
+      expect(FakeWorker.created).toBe(1);
+      c.dispose();
+    });
+
+    it('refuses newGame() after dispose rather than building a worker', async () => {
+      const c = new EngineClient();
+      await bootNewGame(c);
+      c.dispose();
+      const created = FakeWorker.created;
+
+      await expect(within(c.newGame(), 'newGame after dispose')).rejects.toMatchObject({
+        code: 'disposed',
+      });
+      expect(FakeWorker.created).toBe(created);
+      c.dispose();
+    });
+
+    it('refuses setSkillLevel-driven work after dispose without building a worker', async () => {
+      const c = new EngineClient();
+      await bootNewGame(c);
+      c.dispose();
+      const created = FakeWorker.created;
+
+      // setSkillLevel stores the level and returns when there is no worker, so it
+      // cannot throw; the refusal happens at the next real entry point.
+      await c.setSkillLevel(4);
+      expect(FakeWorker.created).toBe(created);
+      await expect(
+        within(c.search(START_FEN, { movetimeMs: 50 }), 'search after dispose'),
+      ).rejects.toMatchObject({ code: 'disposed' });
+      expect(FakeWorker.created).toBe(created);
+      c.dispose();
+    });
+
+    it('is idempotent, and a second dispose does not resurrect anything', async () => {
+      const c = new EngineClient();
+      const { p, w } = await boot(c);
+      c.dispose();
+      await expect(p).rejects.toMatchObject({ code: 'disposed' });
+      const created = FakeWorker.created;
+
+      c.dispose();
+      c.dispose();
+
+      expect(FakeWorker.created).toBe(created);
+      expect(w.terminated).toBe(true);
+      expect(c.status).toBe('idle');
+      await expect(
+        within(c.search(START_FEN, { movetimeMs: 50 }), 'search after repeated dispose'),
+      ).rejects.toMatchObject({ code: 'disposed' });
+      expect(FakeWorker.created).toBe(created);
+    });
+
+    it('a search issued after dispose is refused even on a never-booted client', async () => {
+      const c = new EngineClient();
+      c.dispose();
+
+      await expect(
+        within(c.search(START_FEN, { movetimeMs: 50 }), 'search on a disposed fresh client'),
+      ).rejects.toMatchObject({ code: 'disposed' });
+      expect(FakeWorker.created).toBe(0);
+      c.dispose();
+    });
+
+    it('reports disposed, not a handshake timeout, when the gap is left open', async () => {
+      vi.useFakeTimers();
+      const c = new EngineClient();
+      const p = c.newGame();
+      swallow(p);
+      const w = FakeWorker.last!;
+      await w.waitForSent(/^uci$/);
+
+      w.emit('uciok');
+      c.dispose();
+      // The 20s handshake timer must not be what settles this: dispose owns the
+      // outcome, and `FakeWorker.created` must not have grown.
+      vi.advanceTimersByTime(30_000);
+      await flush();
+
+      await expect(p).rejects.toMatchObject({ code: 'disposed' });
+      expect(FakeWorker.created).toBe(1);
       c.dispose();
     });
   });
@@ -1465,20 +1599,23 @@ describe('EngineClient', () => {
       expect(c.error).toBeNull();
     });
 
-    it('a disposed-and-failed client boots cleanly on the next search', async () => {
+    it('a disposed-and-failed client stays disposed, error cleared', async () => {
       const c = new EngineClient();
       const { p, w } = await boot(c);
       w.emitError(new Error('worker died'));
       await expect(p).rejects.toThrow();
+      const createdAfterFailure = FakeWorker.created;
+
       c.dispose();
 
-      const { p: next, w: w2 } = await boot(c, { movetimeMs: 50 });
-      w2.emit('bestmove e2e4');
-
-      await expect(within(next, 'search after dispose')).resolves.toMatchObject({
-        bestMove: 'e2e4',
-      });
+      // M5 cleared the error, and disposal is terminal: the client reads as a
+      // clean, finished object that will not take new work.
       expect(c.error).toBeNull();
+      expect(c.status).toBe('idle');
+      await expect(
+        within(c.search(START_FEN, { movetimeMs: 50 }), 'search after dispose'),
+      ).rejects.toMatchObject({ code: 'disposed' });
+      expect(FakeWorker.created).toBe(createdAfterFailure);
       c.dispose();
     });
 
@@ -1498,6 +1635,50 @@ describe('EngineClient', () => {
         'worker died',
       );
       expect(c.status).toBe('error');
+      c.dispose();
+    });
+
+    it('reports the real cause when a subscriber re-enters search() while failing', async () => {
+      const c = new EngineClient();
+      const { p, w } = await boot(c);
+
+      // A subscriber that starts new work on the 'error' status — a plausible
+      // "retry the engine" badge. This is the re-entrancy that `fail`'s ordering
+      // exists for: if it notified *before* rejecting, the re-entrant search
+      // would install its own handshake, and `fail` would then reject that
+      // instead of the search that actually died. The dying search's caller would
+      // still be right, but the retry would be collateral damage.
+      let reentered: Promise<unknown> | undefined;
+      c.onStatus((s) => {
+        if (s !== 'error' || reentered !== undefined) return;
+        reentered = c.search(START_FEN, { movetimeMs: 50 });
+        reentered.catch(() => {});
+      });
+
+      w.emitError(new Error('worker died'));
+
+      // The original caller learns why its search failed.
+      await expect(within(p, 'the failing search')).rejects.toMatchObject({
+        code: 'worker-died',
+      });
+      const retry = reentered;
+      expect(retry).toBeDefined();
+
+      // ...and the re-entrant retry is left alone: it gets its own fresh worker
+      // and runs to completion rather than inheriting the previous failure.
+      const w2 = FakeWorker.last!;
+      expect(w2).not.toBe(w);
+      await w2.waitForSent(/^uci$/);
+      w2.emit('uciok');
+      await w2.waitForSent(/^isready$/);
+      w2.emit('readyok');
+      await w2.waitForSent(MOVETIME);
+      w2.emit('bestmove e2e4');
+
+      if (retry === undefined) throw new Error('the subscriber never re-entered');
+      await expect(within(retry, 'the re-entrant retry')).resolves.toMatchObject({
+        bestMove: 'e2e4',
+      });
       c.dispose();
     });
 
