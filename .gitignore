@@ -7,3 +7,5 @@ public/engine/
 .superpowers/
 test-results/
 playwright-report/
+test-results/
+tsconfig.tsbuildinfo
