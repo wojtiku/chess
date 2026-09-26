@@ -1,4 +1,4 @@
-.movelist { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+.movelist { list-style: none; margin: 0; padding: 0; height: 250px; overflow-y: auto; }
 .movelist li { display: flex; gap: 4px; align-items: center; padding: 1px 0; }
 .movelist-n { width: 2.6em; text-align: right; opacity: 0.6; font-variant-numeric: tabular-nums; }
 .movelist-move {
@@ -7,4 +7,4 @@
 }
 .movelist-move[aria-current='true'] { background: var(--selected); font-weight: 600; }
 .movelist-move:focus-visible { outline: 2px solid var(--accent); }
-.movelist-empty { opacity: 0.6; margin: 0; }
+.movelist-empty { opacity: 0.6; margin: 0; height: 250px; }
