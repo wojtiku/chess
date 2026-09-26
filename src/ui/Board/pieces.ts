@@ -10,7 +10,8 @@
 // own copy of the expected values, which is a different thing.
 //
 // The pieces themselves are twelve SVGs in `public/pieces/`, vendored and served
-// as static assets: see `public/pieces/ATTRIBUTION.md`. The brief's `ComponentType`
+// as static assets: see the README there for how they are built. The brief's
+// `ComponentType`
 // re-export is deliberately NOT here — it was dead weight copied from the plan's
 // sketch, and nothing in the app renders a piece as a React component.
 

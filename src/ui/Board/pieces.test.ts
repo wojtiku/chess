@@ -171,12 +171,11 @@ describe('pieceSrc', () => {
 
 describe('the vendored files themselves', () => {
   /**
-   * `ATTRIBUTION.md` claims the white and black versions of each piece are "the
-   * same geometry with the two colours swapped, which is checked rather than
-   * assumed". The review found the claim true by eye and the CHECK missing —
-   * twelve byte-identical copies would have passed every other test in the suite,
-   * so the document was asserting a guarantee nothing enforced. This is that
-   * check, and the document now points here rather than at nothing.
+   * The white and black versions of each piece are "the same drawing, painted
+   * differently, which is checked rather than assumed". That claim was once true by
+   * eye with the CHECK missing — twelve byte-identical copies would have passed every
+   * other test in the suite, so a document was asserting a guarantee nothing
+   * enforced. This is that check.
    *
    * It reads the real files out of `public/`, so it fails if an asset is renamed,
    * deleted, hand-edited to a different size, or if someone recolours one piece of
