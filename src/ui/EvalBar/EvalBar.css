@@ -1,20 +1,26 @@
 .evalbar { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 34px; }
 .evalbar-track {
   position: relative; width: 18px; flex: 1; min-height: 200px;
-  border: 1px solid var(--board-border); border-radius: 4px; overflow: hidden;
+  /* `--edge`, not the old `--board-border`: the track is a UI object standing
+     next to the board, not part of it, and it is a hairline rather than the
+     board's wooden frame. */
+  border: 1px solid var(--edge); border-radius: 4px; overflow: hidden;
 }
 /* The two fills are the "eases between values" half of the no-jitter rule: the
    bar is only ever handed a finished score, and the 220ms transition turns the
    jump between two of them into movement. The cadence — only update when a
-   deeper search improves the score — is the caller's; see EvalBar.tsx. */
-.evalbar-black { position: absolute; inset: 0 0 auto 0; background: #222; transition: height 220ms ease; }
-.evalbar-white { position: absolute; inset: auto 0 0 0; background: #f4f4f4; transition: height 220ms ease; }
-.evalbar-label { font-size: 11px; font-variant-numeric: tabular-nums; }
+   deeper search improves the score — is the caller's; see EvalBar.tsx.
+   These are `--eval-light`/`--eval-dark` and not the board's wood: the bar says
+   which *side* is better, so it is coloured by the two players rather than by
+   the furniture. A brown bar would look handsome and mean nothing. */
+.evalbar-black { position: absolute; inset: 0 0 auto 0; background: var(--eval-dark); transition: height 220ms ease; }
+.evalbar-white { position: absolute; inset: auto 0 0 0; background: var(--eval-light); transition: height 220ms ease; }
+.evalbar-label { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--muted); }
 
 /* A score for an earlier position: still shown, because a blank bar after every
    move is worse than a dimmed one, but dimmed hard enough that it cannot be read
-   as a live reading. Opacity rather than a colour change, so a dark theme and a
-   light one both recede, and it is applied to the whole component so the number
+   as a live reading. Opacity rather than a colour change, so it recedes without
+   becoming a third colour, and it is applied to the whole component so the number
    dims with the bar — a bright number under a faded bar reads as current. */
 .evalbar--stale .evalbar-track,
 .evalbar--stale .evalbar-label { opacity: 0.3; }
@@ -22,15 +28,17 @@
 
 /* No score has ever been measured. `whiteShare` answers 50 in this case, and a bar
    at exactly 50 claims the position is level — a different statement from "not
-   known". Hatched rather than filled, so it cannot be mistaken for a reading. */
+   known". Hatched rather than filled, so it cannot be mistaken for a reading, and
+   hatched in the bar's OWN two tones rather than the board's: a brown hatch
+   inside a bar about advantage would read as a claim about the material. */
 .evalbar[data-unknown] .evalbar-black,
 .evalbar[data-unknown] .evalbar-white {
   background: repeating-linear-gradient(
     45deg,
-    var(--square-light),
-    var(--square-light) 3px,
-    var(--square-dark) 3px,
-    var(--square-dark) 6px
+    var(--eval-light),
+    var(--eval-light) 3px,
+    var(--eval-dark) 3px,
+    var(--eval-dark) 6px
   );
   opacity: 0.45;
 }

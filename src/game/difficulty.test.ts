@@ -2,7 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   ANALYSIS_MOVETIME_MS, DEFAULT_OPPONENT_MOVETIME_MS, DEFAULT_SETTINGS, PRESETS,
   clampMinThink, clampSkill, presetFor, presetLabel, thinkWaitMs,
-  type HintMode, type Settings, type ThemeName,
+  type HintMode, type Settings,
 } from './difficulty';
 
 // The brief's ten assertions, kept verbatim so that nothing here is weaker
@@ -80,7 +80,6 @@ describe('the default settings object', () => {
       skillLevel: 8,
       minThinkTimeMs: 500,
       orientation: 'w',
-      theme: 'light',
       hintMode: 'best',
     });
   });
@@ -108,10 +107,14 @@ describe('the default settings object', () => {
     expect(presetLabel(DEFAULT_SETTINGS.skillLevel)).toBe('Medium');
   });
 
-  it('is well-formed as a Settings: theme and hintMode are their own unions', () => {
+  it('is well-formed as a Settings: hintMode is its own union', () => {
     // Enforced by `tsc -b`, not by this run: a widened `Settings` would still
     // satisfy every runtime assertion in the file.
-    expectTypeOf(DEFAULT_SETTINGS.theme).toEqualTypeOf<ThemeName>();
+    //
+    // This used to assert `ThemeName` as well. There is no theme, so there is
+    // nothing to assert — and a type with one member left would have been a type
+    // asserting that there is exactly one value, which is a statement about a
+    // removed feature rather than about the shape of this object.
     expectTypeOf(DEFAULT_SETTINGS.hintMode).toEqualTypeOf<HintMode>();
     expectTypeOf<Settings['orientation']>().toEqualTypeOf<'w' | 'b'>();
   });

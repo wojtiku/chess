@@ -1,11 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45" width="45" height="45" role="img" aria-label="Black king">
+  <defs>
+    <!-- `userSpaceOnUse`, not `objectBoundingBox`: see the white pieces. One
+         gradient across the whole silhouette rather than one per shape. The top
+         stop is a warm charcoal rather than a grey — this is ebonised wood, and
+         the sheen at the top is what stops it reading as a hole in the board.
+
+         The outline is a warm ivory at #d8c9b0 and that value is not a matter of
+         taste. This piece's BODY is a 2.71:1 contrast against the dark square
+         (measured: #2e2a24 against #8f6244), which is under the 3:1 that says a
+         shape is visible at all — so on half the board the outline is the only
+         thing making the piece readable, and it has to clear 3:1 against the dark
+         square itself. #d8c9b0 gives 3.23:1 there and 8.76:1 against the body.
+         One step warmer (#c9b89c) drops it to 2.71:1 and the piece starts
+         disappearing into the square it stands on. -->
+    <linearGradient id="body" gradientUnits="userSpaceOnUse" x1="0" y1="4" x2="0" y2="42">
+      <stop offset="0" stop-color="#6b6357"/>
+      <stop offset="0.42" stop-color="#2e2a24"/>
+      <stop offset="1" stop-color="#100e0c"/>
+    </linearGradient>
+  </defs>
   <title>Black king</title>
-  <g fill="#1d1f24" stroke="#f6f5f1" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round">
+  <g fill="url(#body)" stroke="#d8c9b0" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round">
       <path d="M20.9 3.6h3.2v3.4h3.4v3.2h-3.4v3.4h-3.2v-3.4h-3.4V7h3.4z"/>
       <path d="M22.5 13.4c5.4 0 9.4 4.3 10 10.2.4 3.6-.6 6.6-2.1 9.6H14.6c-1.5-3-2.5-6-2.1-9.6.6-5.9 4.6-10.2 10-10.2z"/>
       <rect x="9.4" y="33.2" width="26.2" height="6.8" rx="1.9"/>
   </g>
-  <g fill="#1d1f24">
+  <g fill="url(#body)">
       <path d="M20.9 3.6h3.2v3.4h3.4v3.2h-3.4v3.4h-3.2v-3.4h-3.4V7h3.4z"/>
       <path d="M22.5 13.4c5.4 0 9.4 4.3 10 10.2.4 3.6-.6 6.6-2.1 9.6H14.6c-1.5-3-2.5-6-2.1-9.6.6-5.9 4.6-10.2 10-10.2z"/>
       <rect x="9.4" y="33.2" width="26.2" height="6.8" rx="1.9"/>

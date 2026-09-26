@@ -1,6 +1,6 @@
-.engine-status { font-size: 12px; opacity: 0.8; display: flex; flex-direction: column; gap: 4px; }
-.engine-status--thinking { opacity: 1; font-weight: 600; }
-.engine-status--error { opacity: 1; color: var(--check); }
+.engine-status { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.engine-status--thinking { color: var(--fg); font-weight: 600; }
+.engine-status--error { color: var(--check); }
 /* Two `role="status"` regions in one badge would make a screen reader announce the
    generic sentence and the cause separately, so the second is grouped with the
    first by sharing the badge's own live region. */

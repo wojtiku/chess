@@ -1,6 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45" width="45" height="45" role="img" aria-label="White queen">
+  <defs>
+    <!-- `userSpaceOnUse` is the whole point. The default, `objectBoundingBox`,
+         gives every SHAPE its own gradient relative to its own bounding box, so a
+         rook's crenellations and its base would each be fully shaded and the piece
+         would band into separate objects. In user space one gradient spans the
+         45x45 viewBox, so the light falls across the whole silhouette at once. -->
+    <linearGradient id="body" gradientUnits="userSpaceOnUse" x1="0" y1="4" x2="0" y2="42">
+      <stop offset="0" stop-color="#fffdf7"/>
+      <stop offset="0.42" stop-color="#f4ecdb"/>
+      <stop offset="1" stop-color="#d9cbae"/>
+    </linearGradient>
+  </defs>
   <title>White queen</title>
-  <g fill="#f6f5f1" stroke="#1d1f24" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round">
+  <g fill="url(#body)" stroke="#2b241d" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round">
       <circle cx="11.9" cy="10.4" r="2.1"/>
       <circle cx="22.5" cy="6.6" r="2.4"/>
       <circle cx="33.1" cy="10.4" r="2.1"/>
@@ -8,7 +20,7 @@
       <path d="M9.4 30.8h26.2v2.6H9.4z"/>
       <rect x="9.4" y="33.2" width="26.2" height="6.8" rx="1.9"/>
   </g>
-  <g fill="#f6f5f1">
+  <g fill="url(#body)">
       <circle cx="11.9" cy="10.4" r="2.1"/>
       <circle cx="22.5" cy="6.6" r="2.4"/>
       <circle cx="33.1" cy="10.4" r="2.1"/>

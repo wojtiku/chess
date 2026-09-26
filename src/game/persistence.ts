@@ -26,7 +26,7 @@ import { newGame, statusOf, tryApplyMove, type Chess } from '../chess/rules';
 import type { Side } from '../chess/types';
 import { isGameOver } from './gameState';
 import { DEFAULT_SETTINGS, clampMinThink, clampSkill, type Settings } from './difficulty';
-import type { HintMode, ThemeName } from './difficulty-types';
+import type { HintMode } from './difficulty-types';
 
 // Deliberately not exported: the test file spells both keys out, so a renamed
 // key cannot be satisfied by a renamed constant.
@@ -102,10 +102,6 @@ function safeParse(raw: string | null): Record<string, unknown> | null {
   return isRecord(parsed) ? parsed : null;
 }
 
-function isTheme(value: unknown): value is ThemeName {
-  return value === 'light' || value === 'dark';
-}
-
 function isHintMode(value: unknown): value is HintMode {
   return value === 'best' || value === 'good';
 }
@@ -114,32 +110,14 @@ function isOrientation(value: unknown): value is Settings['orientation'] {
   return value === 'w' || value === 'b';
 }
 
-/**
- * The theme a first-time visitor gets: whatever their operating system asks for.
- *
- * `DEFAULT_SETTINGS.theme` is `'light'` and stays that way, because it is a
- * constant used by five fallback paths and by the tests that pin the stored
- * format; a `matchMedia` call in it would make the constant wrong on a learner's
- * machine. So the question is asked here instead, at the one point where "there is
- * no stored preference" is actually knowable.
- *
- * Two guards, both because this runs in jsdom and in Node as well as in a
- * browser: `matchMedia` may not exist at all (an old embedded webview, a test
- * environment), and it may throw (a `SecurityError` from a blocked context, the
- * same class of failure `localStorage` gets two functions above). Either way the
- * answer is the constant, which is what the old unconditional `'light'` did.
- */
-function prefersDark(): boolean {
-  try {
-    return (
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches
-    );
-  } catch {
-    return false;
-  }
-}
+/* There was a `prefersDark()` here, wrapped in two guards for environments where
+   `matchMedia` is missing or throws, and it existed to answer exactly one
+   question: which of the two palettes should a first-time visitor get? With one
+   palette the question is gone, and so is the only caller of `matchMedia` in the
+   app — the app is dark, and `color-scheme: dark` in `theme.css` is what tells
+   the browser that. Nothing reads a stored `theme` any more either; a key left in
+   somebody's `localStorage` is simply not read, which is why an old save still
+   loads instead of being thrown away for carrying a field the schema dropped. */
 
 /** Type check only. Whether the move is *playable* is decided by the replay. */
 function isStoredMove(value: unknown): value is StoredMove {
@@ -179,25 +157,20 @@ function settingsFrom(source: Record<string, unknown>): Settings {
     orientation: isOrientation(source.orientation)
       ? source.orientation
       : DEFAULT_SETTINGS.orientation,
-    // A recognisable stored theme is the learner's choice and wins; anything else
-    // is the absence of one, which is the only time the OS gets a vote.
-    theme: isTheme(source.theme)
-      ? source.theme
-      : prefersDark() ? 'dark' : DEFAULT_SETTINGS.theme,
     hintMode: isHintMode(source.hintMode) ? source.hintMode : DEFAULT_SETTINGS.hintMode,
   };
 }
 
 /** The settings to use, whatever is in storage. Never throws.
  *
- * An empty store is NOT a shortcut around `settingsFrom`: this function used to
- * `return { ...DEFAULT_SETTINGS }` directly when there was nothing stored, which
- * looked equivalent and was not — it meant the first-visit theme never reached a
- * first-time visitor, because the first-visit theme is precisely the case where
- * nothing is stored. `settingsFrom({})` returns the same five fields as
- * `DEFAULT_SETTINGS` and asks the OS about the sixth. The early return is gone so
- * that a first-time visitor and a visitor whose only stored setting is corrupt
- * cannot end up with a different theme. */
+ * There is deliberately no early return for an empty store, so a first-time
+ * visitor and a visitor whose only stored setting is corrupt go through the same
+ * code and cannot end up with different settings. That was load-bearing for one
+ * field and no longer is: an empty store used to mean "ask the OS which theme",
+ * which is the one case an early `return { ...DEFAULT_SETTINGS }` would have got
+ * wrong. With no theme to choose there is nothing left for the two paths to
+ * disagree about, but the single path stays — one way to produce the answer is
+ * easier to keep right than two. */
 export function loadSettings(): Settings {
   return settingsFrom(safeParse(safeGet(SETTINGS_KEY)) ?? {});
 }

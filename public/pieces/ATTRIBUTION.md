@@ -30,43 +30,67 @@ worse than no file, because it is a false licence claim.
 
 ## What the set is
 
-Flat, high-contrast silhouettes on a shared 45×45 `viewBox`. Each piece is drawn
-twice: a first `<g>` fills and strokes every shape, and a second `<g>` fills them
-again with no stroke, so the interior seams of the first pass are covered and only
-the outer contour is left. A single compound path cannot be both filled and
-outlined without a hole, and a visible seam through the middle of a pawn at 45px
-is worse than two passes. Every piece stands on the same plinth, which is what
-makes six unrelated outlines read as one set.
+High-contrast silhouettes on a shared 45×45 `viewBox`, lit from above. Each piece
+is drawn twice: a first `<g>` fills and strokes every shape, and a second `<g>`
+fills them again with no stroke, so the interior seams of the first pass are
+covered and only the outer contour is left. A single compound path cannot be both
+filled and outlined without a hole, and a visible seam through the middle of a pawn
+at 45px is worse than two passes. Every piece stands on the same plinth, which is
+what makes six unrelated outlines read as one set.
 
-| | fill | outline |
+The fill is a three-stop vertical gradient, so each piece has a lit top and a shaded
+base and reads as a turned object rather than a flat cut-out. It is declared
+`gradientUnits="userSpaceOnUse"` on purpose: the default, `objectBoundingBox`, gives
+every *shape* in the group a gradient relative to that shape's own box, so a rook's
+crenellations and its base are each fully shaded and the piece bands into two
+unrelated objects stacked on a plinth. In user space one gradient spans the whole
+45×45 viewBox and the light falls across the entire silhouette at once.
+
+| | body | outline |
 |---|---|---|
-| White | `#f6f5f1` | `#1d1f24` |
-| Black | `#1d1f24` | `#f6f5f1` |
+| White | `#fffdf7` → `#f4ecdb` → `#d9cbae` | `#2b241d` |
+| Black | `#6b6357` → `#2e2a24` → `#100e0c` | `#d8c9b0` |
 
-The outline is not decoration: a white piece on a light square and a black piece
-on a dark square are both low-contrast without one, and a board square is 45px.
-The knight's eye is the only interior detail in the set, and it is there because
-at 45px the difference between "horse" and "lump with a spike on it" is one dot.
+**The outline is load-bearing, and the numbers are why.** Measured against the board
+this app ships (`#e0c9a4` light, `#8f6244` dark), a black piece's *body* is 2.71:1
+against the dark square and a white piece's is about 1.1:1 against the light one —
+both under the 3:1 at which a shape is visible at all. So on the worst square for
+each piece, the outline alone is what makes it readable, and the two outline values
+above are a floor rather than a style choice: `#d8c9b0` gives 3.23:1 on the dark
+square, and one step warmer (`#c9b89c`) drops to 2.71:1, at which point the black
+pieces start sinking into the squares they stand on. `pieces.test.ts` computes these
+ratios, so a retune that breaks them fails the suite.
 
-The white and black versions of each piece are the same drawing in opposite
-colours, which is checked rather than assumed. **What the check does**, precisely:
-`pieces.test.ts` reads each `wX.svg` and `bX.svg` from this directory, replaces
-*both* palette values (`#f6f5f1` and `#1d1f24`) with a single token in each file,
-normalises the words `White` and `Black` in the labels, and asserts the two
-remaining documents are equal. So the drawings must match everywhere except the two
-colours and the side named in the text — a changed viewBox, a different stroke
-width, a moved path or a dropped shape all fail it. It also asserts each file
-really uses both colours, in opposite arrangements, so two colourless files could
-not pass by being trivially equal, and that all twelve drawings are distinct from
-one another.
+The knight's eye is the only interior detail in the set, and it is there because at
+45px the difference between "horse" and "lump with a spike on it" is one dot. It is
+painted in that file's *outline* colour, so the black knight's eye is the dark warm
+value and the white knight's is the light one.
 
-**It does not substitute one palette for the other, and that reading is wrong.**
-An earlier version of this paragraph claimed the files are "byte-identical once the
-two hex colour values are substituted for each other", and the review ran that
-transformation on all six pairs: none match, because `wX.svg` is
-`fill=light stroke=dark` while `bX.svg` is `fill=dark stroke=light`, so swapping
-each file lands the two in opposite arrangements. The test's own comment records
-the same dead end. The claim here is now the one the test actually makes.
+The white and black versions of each piece are the same drawing, lit over the same
+range, painted differently. **What the check does**, precisely: `pieces.test.ts`
+reads each `wX.svg` and `bX.svg` from this directory, strips XML comments and
+*every* hex colour, normalises the words `White` and `Black` in the labels, and
+asserts the two remaining documents are equal. So the drawings must match everywhere
+except colour and the side named in the text — a changed viewBox, a different stroke
+width, a moved path, a dropped shape or a shifted gradient stop all fail it. Three
+further assertions keep it from being vacuous: each file must have an outline and the
+two outlines must differ, neither file may use the other's outline colour, and the
+two files must not be byte-identical. All twelve drawings are also asserted distinct
+from one another.
+
+**The comments are stripped, and that is deliberate.** Each side's `<defs>` carries a
+comment explaining the gradient, and the two explain themselves in different words.
+They are prose about the artwork rather than the artwork, and two files differing
+only in their comments are the same drawing — comparing them verbatim would have made
+the test a check on that prose.
+
+**The colours are not named in the test.** An earlier version did, and pinning the hex
+meant a retune with a measured reason behind it failed on a value that was never the
+thing being claimed. Worse, the knight kept passing: its eye is painted in the other
+file's outline colour, so `bN.svg` still contained the retired value and the
+assertion was satisfied by the wrong pixel. The test now reads each file's outline
+colour and asserts the *relationship* — the two differ, and neither file uses the
+other's — which is the actual claim, and survives any future retune.
 
 **Filenames are lowercase colour, uppercase piece letter** — `wQ`, `bK`. This is
 load-bearing in a way that is invisible on macOS: a set written as `WQ.svg` works

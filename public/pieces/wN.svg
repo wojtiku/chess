@@ -1,12 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45" width="45" height="45" role="img" aria-label="White knight">
+  <defs>
+    <!-- `userSpaceOnUse` is the whole point. The default, `objectBoundingBox`,
+         gives every SHAPE its own gradient relative to its own bounding box, so a
+         rook's crenellations and its base would each be fully shaded and the piece
+         would band into separate objects. In user space one gradient spans the
+         45x45 viewBox, so the light falls across the whole silhouette at once. -->
+    <linearGradient id="body" gradientUnits="userSpaceOnUse" x1="0" y1="4" x2="0" y2="42">
+      <stop offset="0" stop-color="#fffdf7"/>
+      <stop offset="0.42" stop-color="#f4ecdb"/>
+      <stop offset="1" stop-color="#d9cbae"/>
+    </linearGradient>
+  </defs>
   <title>White knight</title>
-  <g fill="#f6f5f1" stroke="#1d1f24" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round">
+  <g fill="url(#body)" stroke="#2b241d" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round">
       <path d="M10.4 24.6c2-4.4 4.6-8.4 7.4-11.4l1.6-4.6c.4-.9 1.5-1 2-.1l1.9 3.6c3 1.6 5.8 4.2 7.6 7.6 2 4 3.2 8.4 3.2 13.5H13.2c-1.8-2.8-3-6-2.8-8.6z"/>
       <rect x="9.4" y="33.2" width="26.2" height="6.8" rx="1.9"/>
   </g>
-  <g fill="#f6f5f1">
+  <g fill="url(#body)">
       <path d="M10.4 24.6c2-4.4 4.6-8.4 7.4-11.4l1.6-4.6c.4-.9 1.5-1 2-.1l1.9 3.6c3 1.6 5.8 4.2 7.6 7.6 2 4 3.2 8.4 3.2 13.5H13.2c-1.8-2.8-3-6-2.8-8.6z"/>
       <rect x="9.4" y="33.2" width="26.2" height="6.8" rx="1.9"/>
   </g>
-  <g fill="#1d1f24"><circle cx="16.6" cy="20.4" r="1.15"/></g>
+  <g fill="#2b241d"><circle cx="16.6" cy="20.4" r="1.15"/></g>
 </svg>

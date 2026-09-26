@@ -1,11 +1,17 @@
 .controls { display: flex; flex-direction: column; gap: 8px; }
 .controls-nav, .controls-main { display: flex; gap: 6px; }
 .controls button {
-  flex: 1; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--board-border);
-  background: var(--panel-bg); color: inherit; font: inherit; cursor: pointer;
+  flex: 1; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--edge);
+  background: var(--panel); color: inherit; font: inherit; cursor: pointer;
   min-height: 34px;
+  /* A lift on hover only, and only a background change. This is the one
+     interactive affordance in the app that is not a board square, and a board
+     square's feedback is a ring — so the buttons answer the same way, quietly,
+     rather than adding a second idea about what "pressable" looks like. */
+  transition: background-color 120ms ease;
 }
+.controls button:hover:not(:disabled) { background: var(--panel-raised); border-color: var(--brass-dim); }
 .controls button:disabled { opacity: 0.45; cursor: not-allowed; }
-.controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.controls button:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
 /* The four navigation buttons are icons, so they are sized rather than padded. */
 .controls-nav button { display: grid; place-items: center; }

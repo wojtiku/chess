@@ -1,10 +1,53 @@
-.movelist { list-style: none; margin: 0; padding: 0; height: 250px; overflow-y: auto; }
-.movelist li { display: flex; gap: 4px; align-items: center; padding: 1px 0; }
-.movelist-n { width: 2.6em; text-align: right; opacity: 0.6; font-variant-numeric: tabular-nums; }
-.movelist-move {
-  flex: 1; text-align: left; border: 0; background: transparent; cursor: pointer;
-  padding: 2px 6px; border-radius: 4px; font: inherit; min-width: 0;
+/* The move list as a printed score sheet: number, White, Black, sitting in a
+   compact block in the top-left of the panel.
+   
+   The three columns are a GRID with fixed tracks, and that is the fix for the one
+   thing that looked wrong here. The row used to be a flex line with two `flex: 1`
+   buttons, so each move claimed half the panel's ~340px and its left-aligned SAN
+   landed in the middle of that half — which put "1. e4" at the left edge and "d6"
+   some 300px away, on the opposite side of the panel, with a third of the width
+   empty between them. Not a score sheet; a gap. Fixed tracks put the two moves
+   side by side at reading distance, and the empty space goes to the right of the
+   block where it belongs.
+   
+   `auto` for the last track rather than a fixed one: a game can be 80 moves long
+   and "Qxf7+" has to fit, so the Black column is as wide as the widest move needs
+   and no wider. `minmax(0, 1fr)` is NOT used — a long move must not be able to
+   stretch the column, or one castle in move 40 would re-space the whole list. */
+.movelist {
+  list-style: none; margin: 0; padding: 0;
+  height: 250px; overflow-y: auto;
+  font-family: var(--font-score);
+  font-size: 15px;
+  /* A hairline under the list, so the block reads as one object rather than as
+     loose text in a column. One rule, and it is the only border in the panel. */
+  width: fit-content;
+  max-width: 100%;
 }
-.movelist-move[aria-current='true'] { background: var(--selected); font-weight: 600; }
-.movelist-move:focus-visible { outline: 2px solid var(--accent); }
-.movelist-empty { opacity: 0.6; margin: 0; height: 250px; }
+.movelist li {
+  display: grid;
+  grid-template-columns: 2.4em 4.6em auto;
+  gap: 2px;
+  align-items: center;
+  padding: 1px 0;
+}
+.movelist-n {
+  text-align: right; padding-right: 4px;
+  color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.movelist-move {
+  text-align: left; border: 0; background: transparent; cursor: pointer;
+  padding: 2px 6px; border-radius: 4px; font: inherit; min-width: 0;
+  color: var(--fg);
+}
+.movelist-move:hover:not([aria-current='true']) { background: var(--panel-raised); }
+/* The current move is brass, not merely bolder. Bold alone says "this one"; brass
+   says "this one, and it is also the thing on the board", which is the connection
+   the learner is actually making when they click a move. */
+.movelist-move[aria-current='true'] { background: var(--brass-soft); color: var(--brass); font-weight: 600; }
+.movelist-move:focus-visible { outline: 2px solid var(--brass); }
+/* `width: fit-content` on the list means a short game leaves the rest of the panel
+   empty, and a scrollbar would otherwise hang at the far edge of a 340px column
+   for three moves. The list scrolls when it overflows its own box, which is now
+   only as wide as the moves are. */
+.movelist-empty { color: var(--muted); margin: 0; height: 250px; font-family: var(--font-score); }

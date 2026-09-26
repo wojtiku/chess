@@ -1,12 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45" width="45" height="45" role="img" aria-label="Black knight">
+  <defs>
+    <!-- `userSpaceOnUse`, not `objectBoundingBox`: see the white pieces. One
+         gradient across the whole silhouette rather than one per shape. The top
+         stop is a warm charcoal rather than a grey — this is ebonised wood, and
+         the sheen at the top is what stops it reading as a hole in the board.
+
+         The outline is a warm ivory at #d8c9b0 and that value is not a matter of
+         taste. This piece's BODY is a 2.71:1 contrast against the dark square
+         (measured: #2e2a24 against #8f6244), which is under the 3:1 that says a
+         shape is visible at all — so on half the board the outline is the only
+         thing making the piece readable, and it has to clear 3:1 against the dark
+         square itself. #d8c9b0 gives 3.23:1 there and 8.76:1 against the body.
+         One step warmer (#c9b89c) drops it to 2.71:1 and the piece starts
+         disappearing into the square it stands on. -->
+    <linearGradient id="body" gradientUnits="userSpaceOnUse" x1="0" y1="4" x2="0" y2="42">
+      <stop offset="0" stop-color="#6b6357"/>
+      <stop offset="0.42" stop-color="#2e2a24"/>
+      <stop offset="1" stop-color="#100e0c"/>
+    </linearGradient>
+  </defs>
   <title>Black knight</title>
-  <g fill="#1d1f24" stroke="#f6f5f1" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round">
+  <g fill="url(#body)" stroke="#d8c9b0" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round">
       <path d="M10.4 24.6c2-4.4 4.6-8.4 7.4-11.4l1.6-4.6c.4-.9 1.5-1 2-.1l1.9 3.6c3 1.6 5.8 4.2 7.6 7.6 2 4 3.2 8.4 3.2 13.5H13.2c-1.8-2.8-3-6-2.8-8.6z"/>
       <rect x="9.4" y="33.2" width="26.2" height="6.8" rx="1.9"/>
   </g>
-  <g fill="#1d1f24">
+  <g fill="url(#body)">
       <path d="M10.4 24.6c2-4.4 4.6-8.4 7.4-11.4l1.6-4.6c.4-.9 1.5-1 2-.1l1.9 3.6c3 1.6 5.8 4.2 7.6 7.6 2 4 3.2 8.4 3.2 13.5H13.2c-1.8-2.8-3-6-2.8-8.6z"/>
       <rect x="9.4" y="33.2" width="26.2" height="6.8" rx="1.9"/>
   </g>
-  <g fill="#f6f5f1"><circle cx="16.6" cy="20.4" r="1.15"/></g>
+  <g fill="#f4ead6"><circle cx="16.6" cy="20.4" r="1.15"/></g>
 </svg>

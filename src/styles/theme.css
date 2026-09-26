@@ -1,41 +1,99 @@
-/* Every colour in the app comes from here. The dark theme is one attribute on
-   <html> and nothing else has a second palette, so a colour cannot be defined in
-   a component and then not exist in the other theme.
+/* Every colour in the app comes from here.
 
-   `color-scheme` is declared before the custom properties on purpose: it is what
-   makes the browser's own widgets — scrollbars, the range inputs' track, the
-   `<select>` in the hint options, a focus ring drawn by the UA — follow the
-   theme. Without it a dark panel with light scrollbars is the most common way a
-   "dark mode" announces that nobody asked the browser. */
+   **One theme, and it is the dark one.** There is no `data-theme` and no light
+   palette. A second theme was a toggle that cost a branch in `App`, a `theme` key
+   in `Settings`, a `ThemeName` type, a validation rule in `persistence.ts` and a
+   `prefers-color-scheme` read — all of it to offer the learner a version of an
+   app they never asked for, on a board where the pieces read best against wood
+   and shadow. The `theme` key is still *tolerated* in stored settings (ignored,
+   not rejected) so a learner's saved game keeps loading.
+
+   `color-scheme: dark` is declared before the custom properties on purpose: it is
+   what makes the browser's own widgets — scrollbars, the range inputs' track, the
+   `<select>`, a focus ring drawn by the UA — follow the theme. Without it a dark
+   panel with light scrollbars is the most common way a "dark mode" announces that
+   nobody asked the browser. */
 :root {
-  color-scheme: light dark;
-  --square-light: #ecdab9;
-  --square-dark: #a97a5b;
-  --board-border: #2b2b2b;
-  --panel-bg: #ffffff;
-  --panel-fg: #1a1a1a;
-  --accent: #4a7c59;
-  --check: #d9534f;
-  --last-move: rgba(255, 214, 0, 0.45);
-  --selected: rgba(120, 160, 255, 0.5);
-}
-:root[data-theme='dark'] {
   color-scheme: dark;
-  --square-light: #b6c3c9;
-  --square-dark: #6b7f8c;
-  --panel-bg: #1c1f23;
-  --panel-fg: #eceff1;
-  --board-border: #d7dde2;
+
+  /* The room. Warm near-black rather than the `#111` / `#0B0B0B` that stands in for
+     black in most dark themes: a board is wood, and wood in shadow is brown-black,
+     not neutral. Everything on screen is a warm colour, so nothing looks like a
+     grey box with a wooden sticker on it. */
+  --ink: #15120f;
+  --panel: #1e1a16;
+  /* Barely lifted from the room — a surface you can see the edge of, not a card
+     floating above it. */
+  --panel-raised: #262019;
+  --edge: #332c24;
+  --fg: #e8e0d4;
+  --muted: #9a9086;
+
+  /* The board. Two woods, not two greys: a pale tan and a walnut brown. This is
+     the only part of the app that is allowed to be bright, and that restraint is
+     what makes it read as the subject rather than as one panel among several. */
+  --board-light: #e0c9a4;
+  --board-dark: #8f6244;
+
+  /* One accent, and it is brass — the colour of a board's fittings and of lamplight
+     on wood. The green this replaces was a stock pairing with brown and did nothing
+     for the brief. Brass carries the checked preset, the focus ring, the last-move
+     wash and the selection ring, and being the only saturated colour on screen it
+     reads as the app's one point of emphasis. */
+  --brass: #d9a441;
+  --brass-dim: #a87f31;
+  /* Text and icons ON a brass fill, and the one accent wash. `on-brass` exists so
+     the three places that put a label on a brass background (the checked preset,
+     the result banner, the disclosure link) agree, and so nobody reaches for a
+     `#fff` that would sit at 1.9:1 on brass and fail contrast outright. */
+  --on-brass: #15120f;
+  --brass-soft: rgba(217, 164, 65, 0.22);
+
+  /* Check, in two forms, because the two uses are not the same colour. The glow is
+     a wash drawn over a square and has to be partly transparent or it hides the
+     wood; the solid one is text and a border, where a translucent value would be a
+     colour nobody can predict against whatever is behind it. */
+  --check: #e05a4f;
+  --check-glow: rgba(224, 90, 79, 0.8);
+  --last-move: rgba(217, 164, 65, 0.34);
+
+  /* The eval bar's own two tones, deliberately NOT the board's.
+     The board is brown because it is wood; the bar answers a different question —
+     which side is better — and a brown bar would answer neither. These are light
+     and dark because the two players are, so the bar keeps meaning what it means
+     whatever the board is painted.
+
+     The light one is a dim ivory rather than a paper white, and that is a ranking
+     decision: the bar runs the full height of the board beside it, so a white fill
+     made it the second-brightest object on the page and it pulled the eye off the
+     position. It still has to be clearly the light end of a two-tone bar, which is
+     why it is a warm grey-ivory and not a mid-tone. */
+  --eval-light: #d9cdb8;
+  --eval-dark: #2a2520;
+
+  /* A printed score sheet is a serif, and so is the move list here: SAN in a
+     score-sheet serif is the tradition this app is in, and it separates notation
+     from chrome at a glance. `Georgia` is the workhorse fallback — a screen serif
+     drawn for small sizes, which is the only kind that survives a 13px move list.
+     No webfont: there is no network, and a font that does not load is a layout
+     shift nobody asked for. */
+  --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-score: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
 }
-/* The dark square colours are desaturated grey-blues rather than the browns of
-   the light theme, so the light and dark boards are recognisably the same board
-   and a piece's white outline still reads against both. */
-:root[data-theme='light'] {
-  color-scheme: light;
-}
+
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--panel-bg); color: var(--panel-fg);
-       font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  /* A single warm pool of light over the whole page, brightest at the top where
+     the board is. One gradient on the page, not one on every card — the point is
+     that the room has a light in it, not that each element is decorated. */
+  background-image: radial-gradient(120% 80% at 50% 0%, #241d16 0%, var(--ink) 70%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
 
 /* One focus ring for every button in the app that does not draw its own. The
    board's squares and the promotion picker's options set their own, and both are
@@ -43,23 +101,15 @@ body { margin: 0; background: var(--panel-bg); color: var(--panel-fg);
    cannot flatten the square's inset ring into a box the 45px square spills out
    of. */
 button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--brass);
   outline-offset: 2px;
-}
-
-/* The board is a fixed 8x8 on a light or dark square; the shadow is the only
-   thing separating it from a panel of the same colour. */
-.board {
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.18);
 }
 
 /* Respect a stated preference to watch nothing move. `0.001ms` rather than
    `none`: an animation with `animation-duration: 0` still fires its
    `animationend` handler, and a `transition-duration: 0` is not transitioned at
    all, so a rule that read "off" would break a future effect that waits for one
-   of those events. Nothing in this app animates today — the eval bar eases and
-   the badge is static — so this is insurance, and it is here because the spec
-   asks for it rather than because a bug has been found yet. */
+   of those events. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

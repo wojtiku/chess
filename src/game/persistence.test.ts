@@ -136,8 +136,11 @@ describe('persistence', () => {
   });
 
   it('round-trips settings', () => {
-    saveSettings({ ...DEFAULT_SETTINGS, skillLevel: 1, theme: 'dark' });
-    expect(loadSettings()).toMatchObject({ skillLevel: 1, theme: 'dark' });
+    // `hintMode` rather than the `theme` this used to save, because there is no
+    // theme to save and the test is about the round trip, not about which field
+    // happened to change.
+    saveSettings({ ...DEFAULT_SETTINGS, skillLevel: 1, hintMode: 'good' });
+    expect(loadSettings()).toMatchObject({ skillLevel: 1, hintMode: 'good' });
   });
 
   it('clamps out-of-range values on read', () => {
@@ -151,7 +154,7 @@ describe('persistence', () => {
   });
 
   it('discards wrong-shaped settings and returns defaults', () => {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ skillLevel: 'eight', theme: 42 }));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ skillLevel: 'eight', orientation: 42 }));
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
   });
 
@@ -161,123 +164,82 @@ describe('persistence', () => {
   });
 
   /**
-   * The one preference the operating system gets a vote on.
+   * There is no theme any more, and the interesting question is what happens to
+   * the learners who stored one.
    *
-   * `DEFAULT_SETTINGS.theme` is `'light'` and stays that way — it is the fallback
-   * for five paths and is pinned by the stored-format test above, so a
-   * `matchMedia` call inside it would make the constant wrong on a learner's
-   * machine. The question is asked in `settingsFrom` instead, at the one point
-   * where "there is no stored preference" is knowable.
+   * The answer has to be "ignored, not rejected". Every other field in this object
+   * is validated and falls back when it is unreadable, so a `theme` key failing
+   * validation would be the consistent behaviour — and it would be wrong. A
+   * consistent-and-wrong outcome here is `loadSettings()` handing back a default
+   * object that had somehow been treated as wholly corrupt, which throws away a
+   * learner's skill level and think time because of a field the app no longer
+   * reads. The stored shape is read field by field, so an unknown key is simply
+   * not copied across.
+   *
+   * This is the whole reason `settingsFrom` is a per-field read rather than a
+   * validate-then-accept, and the block below is what keeps it that way.
    */
-  describe('the first-visit theme', () => {
-    /**
-     * A `matchMedia` that answers `matches` for the dark query.
-     *
-     * Installed on `window` with `defineProperty` rather than `vi.spyOn`, because
-     * **jsdom does not implement `matchMedia` at all** — verified, not assumed:
-     * `typeof window.matchMedia` is `'undefined'` in this environment. That is
-     * precisely the case `prefersDark`'s `typeof === 'function'` guard exists for,
-     * and it means these tests are the only place the dark path can be exercised.
-     *
-     * `as never` because jsdom's `MediaQueryList` is far more than the one member
-     * the production code reads, and a hand-rolled object cannot be a real one.
-     */
-    function prefersDark(matches: boolean) {
+  describe('a theme stored by an earlier version', () => {
+    it('is ignored, and every other stored setting still survives', () => {
+      // The real shape a returning learner has: valid settings, plus a key the
+      // schema has since dropped.
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+        skillLevel: 15,
+        minThinkTimeMs: 900,
+        orientation: 'b',
+        theme: 'light',
+        hintMode: 'good',
+      }));
+      expect(loadSettings()).toEqual({
+        skillLevel: 15,
+        minThinkTimeMs: 900,
+        orientation: 'b',
+        hintMode: 'good',
+      });
+    });
+
+    it('is ignored whichever value it holds, including a nonsense one', () => {
+      // `theme: 42` used to be the brief's wrong-typed case. It still has to be
+      // harmless, and it still must not cost the learner the rest of the object.
+      for (const theme of ['light', 'dark', 'solarized', 42, null, { a: 1 }]) {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify({ skillLevel: 3, theme }));
+        expect(loadSettings(), JSON.stringify(theme)).toEqual({ ...DEFAULT_SETTINGS, skillLevel: 3 });
+      }
+    });
+
+    it('is not written back out, so a later save does not keep it alive', () => {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...DEFAULT_SETTINGS, theme: 'light' }));
+      const loaded = loadSettings();
+      saveSettings(loaded);
+      // The point of dropping the key: one round trip and the stale field is gone
+      // for good, rather than sitting in storage forever because the loader keeps
+      // tolerating it.
+      expect(JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}')).not.toHaveProperty('theme');
+    });
+
+    it('leaves the operating system alone entirely', () => {
+      // There is no longer a `matchMedia` call anywhere in this module, and this
+      // is the test that says so rather than leaving it to a reader's memory. A
+      // `matchMedia` added back would be a theme decision nobody made, so the
+      // stub fails loudly if anything asks.
       const queries: string[] = [];
       Object.defineProperty(window, 'matchMedia', {
         configurable: true,
         writable: true,
         value: (query: string) => {
           queries.push(query);
-          return { matches, media: query } as never;
+          return { matches: true, media: query } as never;
         },
       });
-      return queries;
-    }
-
-    afterEach(() => {
-      // Back to jsdom's state, which is "no matchMedia at all" — so the guard in
-      // `prefersDark` is exercised by the rest of this file as well.
-      //
-      // Guarded, because the last test in this block sets `window` itself to
-      // `undefined` and `vi.unstubAllGlobals` has not run yet at this point; the
-      // order of the two teardowns is the file's, not this block's.
-      if (typeof window !== 'undefined') Reflect.deleteProperty(window, 'matchMedia');
+      try {
+        loadSettings();
+        saveSettings(DEFAULT_SETTINGS);
+        loadSettings();
+        expect(queries).toEqual([]);
+      } finally {
+        Reflect.deleteProperty(window, 'matchMedia');
+      }
     });
-
-    it('is dark when the OS asks for dark and nothing is stored', () => {
-      prefersDark(true);
-      expect(loadSettings().theme).toBe('dark');
-    });
-
-    it('is light when the OS asks for light and nothing is stored', () => {
-      // The positive control: a function that always said `true` would pass the
-      // test above and this one, so the two are both required.
-      prefersDark(false);
-      expect(loadSettings().theme).toBe('light');
-    });
-
-    it('is asked for with the dark query, and nothing else', () => {
-      // One call, and it is this query. A `prefers-color-scheme: light` check, or
-      // a second query, would both be a bug no other test here can see.
-      const queries = prefersDark(true);
-      loadSettings();
-      expect(queries).toEqual(['(prefers-color-scheme: dark)']);
-    });
-
-    it('defers to a stored theme, whichever the OS says', () => {
-      // The override. A learner who has chosen light in a dark-OS browser must not
-      // be overruled on the next load, which is what makes the header's switch
-      // worth having at all.
-      prefersDark(true);
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ theme: 'light' }));
-      expect(loadSettings().theme).toBe('light');
-
-      prefersDark(false);
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ theme: 'dark' }));
-      expect(loadSettings().theme).toBe('dark');
-    });
-
-    it('is not asked about at all when a stored theme is readable', () => {
-      const queries = prefersDark(true);
-      saveSettings({ ...DEFAULT_SETTINGS, theme: 'dark' });
-      expect(loadSettings().theme).toBe('dark');
-      // Zero calls, not zero effect: the OS is irrelevant once a choice is stored.
-      expect(queries).toEqual([]);
-    });
-
-    it('falls back to light where matchMedia does not exist, rather than throwing', () => {
-      // An old embedded webview, or a non-browser host that has run this module.
-      // This is not a hypothetical: jsdom itself is in this state, and
-      // `loadSettings` runs during render, so a throw here is a blank app.
-      expect(typeof window.matchMedia).toBe('undefined');
-      expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
-    });
-
-    it('falls back to light where matchMedia throws, rather than propagating', () => {
-      // A `SecurityError` from a blocked context is the same failure mode as
-      // `localStorage` refusing to be read, and gets the same treatment: the
-      // question is not answered and the constant is used.
-      prefersDarkAndThrow();
-      expect(loadSettings().theme).toBe('light');
-    });
-
-    it('falls back to light when there is no window at all', () => {
-      // Node, and a service worker importing the module. The `typeof` guard is
-      // what makes `prefersDark` total rather than a `ReferenceError`.
-      vi.stubGlobal('window', undefined);
-      expect(loadSettings().theme).toBe('light');
-    });
-
-    function prefersDarkAndThrow() {
-      Object.defineProperty(window, 'matchMedia', {
-        configurable: true,
-        writable: true,
-        value: () => {
-          throw new Error('matchMedia is blocked by this context');
-        },
-      });
-    }
   });
 
   it('round-trips a move list', () => {
@@ -300,12 +262,12 @@ describe('persistence', () => {
     // test. The brief's version saved `DEFAULT_SETTINGS` and then asserted
     // `loadSettings()` still returned `DEFAULT_SETTINGS` — which is also what
     // a `clearGame` that wiped both keys would return, so it could not fail.
-    saveSettings({ ...DEFAULT_SETTINGS, skillLevel: 20, theme: 'dark', hintMode: 'good' });
+    saveSettings({ ...DEFAULT_SETTINGS, skillLevel: 20, hintMode: 'good' });
     saveGame([{ from: 'e2', to: 'e4' }], undefined);
     clearGame();
     expect(loadGame()).toBeNull();
     expect(localStorage.getItem(SETTINGS_KEY)).not.toBeNull();
-    expect(loadSettings()).toMatchObject({ skillLevel: 20, theme: 'dark', hintMode: 'good' });
+    expect(loadSettings()).toMatchObject({ skillLevel: 20, hintMode: 'good' });
   });
 
   it('degrades to session-only when writing throws (private mode)', () => {
@@ -346,15 +308,19 @@ describe('settings: shape of what comes out', () => {
     const first = loadSettings();
     expect(first).not.toBe(DEFAULT_SETTINGS);
     first.skillLevel = 1;
-    first.theme = 'dark';
+    first.hintMode = 'good';
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
   });
 
-  it('has exactly the five documented keys, whatever was stored', () => {
-    storeSettings(JSON.stringify({ ...DEFAULT_SETTINGS, hacker: true, __proto__: { hacked: true } }));
+  it('has exactly the four documented keys, whatever was stored', () => {
+    // Four, not five: `theme` is gone. This assertion is the migration story in one
+    // line — an unknown key in storage (including the `theme` an earlier version
+    // wrote) produces an object with exactly the documented keys and nothing else,
+    // so there is no path by which a dropped field comes back.
+    storeSettings(JSON.stringify({ ...DEFAULT_SETTINGS, theme: 'light', hacker: true, __proto__: { hacked: true } }));
     const loaded = loadSettings();
     expect(Object.keys(loaded).sort()).toEqual(
-      ['hintMode', 'minThinkTimeMs', 'orientation', 'skillLevel', 'theme'],
+      ['hintMode', 'minThinkTimeMs', 'orientation', 'skillLevel'],
     );
     // A stored `__proto__` key is an own property of the parsed object, so
     // anything that spread the parsed value would carry it into the settings.
@@ -420,7 +386,7 @@ describe('settings: what is written', () => {
     const raw = localStorage.getItem(SETTINGS_KEY);
     expect(raw).toContain('"skillLevel":1');
     expect(raw).toBe(
-      '{"skillLevel":1,"minThinkTimeMs":500,"orientation":"w","theme":"light","hintMode":"best"}',
+      '{"skillLevel":1,"minThinkTimeMs":500,"orientation":"w","hintMode":"best"}',
     );
   });
 
@@ -450,12 +416,11 @@ describe('settings: recovering corrupt values', () => {
     // written for, and it is the reason per-field fallback is the right
     // policy: a learner's dark theme and 800ms think time survive a single
     // bad field, which wholesale discard would throw away for nothing.
-    storeSettings(JSON.stringify({ skillLevel: 'eight', minThinkTimeMs: 800, theme: 'dark', hintMode: 'good' }));
+    storeSettings(JSON.stringify({ skillLevel: 'eight', minThinkTimeMs: 800, hintMode: 'good' }));
     expect(loadSettings()).toEqual({
       skillLevel: 8,
       minThinkTimeMs: 800,
       orientation: 'w',
-      theme: 'dark',
       hintMode: 'good',
     });
   });
@@ -466,7 +431,7 @@ describe('settings: recovering corrupt values', () => {
     // fallback produces the same object without the branch, because a
     // Settings is always exactly these five fields.
     storeSettings(JSON.stringify({
-      skillLevel: 'eight', minThinkTimeMs: 'fast', orientation: 'sideways', theme: 42, hintMode: 'psychic',
+      skillLevel: 'eight', minThinkTimeMs: 'fast', orientation: 'sideways', hintMode: 'psychic',
     }));
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
   });
@@ -480,8 +445,8 @@ describe('settings: recovering corrupt values', () => {
     ['a JSON string', '"w"'],
     ['a JSON array', '[]'],
     ['an empty object', '{}'],
-    ["the brief's wrong-typed pair", JSON.stringify({ skillLevel: 'eight', theme: 42 })],
-    ['a null field', JSON.stringify({ theme: null })],
+    ["the brief's wrong-typed pair", JSON.stringify({ skillLevel: 'eight', orientation: 42 })],
+    ['a null field', JSON.stringify({ orientation: null })],
     ['a boolean where a number belongs', JSON.stringify({ skillLevel: true, minThinkTimeMs: false })],
     ['a nested object', JSON.stringify({ skillLevel: { value: 3 } })],
     ['an array of settings', JSON.stringify([DEFAULT_SETTINGS])],
@@ -514,11 +479,11 @@ describe('settings: recovering corrupt values', () => {
 
 describe('settings: versioned keys', () => {
   it('reads v1 and ignores every other version, including a newer one', () => {
-    storeSettings(JSON.stringify({ ...DEFAULT_SETTINGS, skillLevel: 20, theme: 'dark' }));
-    localStorage.setItem('chess.settings.v2', JSON.stringify({ skillLevel: 1, theme: 'light' }));
+    storeSettings(JSON.stringify({ ...DEFAULT_SETTINGS, skillLevel: 20 }));
+    localStorage.setItem('chess.settings.v2', JSON.stringify({ skillLevel: 1 }));
     localStorage.setItem('chess.settings', JSON.stringify({ skillLevel: 1 }));
     localStorage.setItem('chess.game.v1', JSON.stringify({ moves: fromUci('e2e4') }));
-    expect(loadSettings()).toMatchObject({ skillLevel: 20, theme: 'dark' });
+    expect(loadSettings()).toMatchObject({ skillLevel: 20 });
   });
 
   it('ignores a game stored under another version key', () => {

@@ -8,9 +8,9 @@
 // `presetLabel` normalise their argument before they look at the table — see
 // the note on those two functions.
 
-import type { HintMode, ThemeName } from './difficulty-types';
+import type { HintMode } from './difficulty-types';
 
-export type { HintMode, ThemeName } from './difficulty-types';
+export type { HintMode } from './difficulty-types';
 
 export interface Settings {
   /** UCI `Skill Level`, 0-20. Always an integer: `clampSkill` truncates. */
@@ -18,7 +18,10 @@ export interface Settings {
   /** Floor on the opponent's reply time, 0-3000, always a multiple of 100. */
   minThinkTimeMs: number;
   orientation: 'w' | 'b';
-  theme: ThemeName;
+  /* There is no `theme` key and there is no `theme` concept, so there is nothing
+     to document here. The app is dark, always; a stored `theme` from an earlier
+     version is ignored on load rather than rejected, because a learner's saved
+     game has to keep working and the key is simply not read. */
   hintMode: HintMode;
 }
 
@@ -63,7 +66,6 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   skillLevel: 8,
   minThinkTimeMs: 500,
   orientation: 'w',
-  theme: 'light',
   hintMode: 'best',
 });
 

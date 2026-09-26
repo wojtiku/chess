@@ -1,12 +1,19 @@
 .result-banner {
   padding: 10px 14px; border-radius: 8px; font-weight: 600;
-  background: var(--accent); color: #fff;
+  /* `--on-brass`, not `#fff`. White on brass is about 1.9:1, which is not text on
+     a background, it is text on a lightbulb. The banner is the last thing a
+     learner reads and the thing they are most likely to have on screen for a
+     while, so it is the worst place to economise on contrast. */
+  background: var(--brass); color: var(--on-brass);
 }
-/* A win and a draw are not the same news, so they are not the same colour. The
-   accent is the app's green; a drawn result steps back rather than shouting. */
+/* A win and a draw are not the same news, so they are not the same treatment. A
+   decisive result gets the brass; a draw steps back to a quiet raised panel
+   rather than shouting in a second colour. */
 .result-banner[data-kind='stalemate'],
 .result-banner[data-kind='threefold'],
 .result-banner[data-kind='fiftyMove'],
 .result-banner[data-kind='insufficientMaterial'] {
-  background: var(--panel-fg);
+  background: var(--panel-raised);
+  border: 1px solid var(--edge);
+  color: var(--fg);
 }

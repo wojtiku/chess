@@ -270,10 +270,10 @@ describe('DifficultyControl', () => {
 
   it('changes only the skill level when a preset is clicked', async () => {
     const onChange = vi.fn();
-    const settings: Settings = { ...DEFAULT_SETTINGS, minThinkTimeMs: 1200, orientation: 'b', theme: 'dark' };
+    const settings: Settings = { ...DEFAULT_SETTINGS, minThinkTimeMs: 1200, orientation: 'b' };
     render(<DifficultyControl settings={settings} onChange={onChange} />);
     await userEvent.setup().click(radio('Expert'));
-    // Orientation, theme, hint mode and think time are not this control's business.
+    // Orientation, hint mode and think time are not this control's business.
     // Dropping one of them is invisible on screen and very visible to a learner
     // whose board flips because they changed the difficulty.
     expect(onChange).toHaveBeenCalledWith({ ...settings, skillLevel: 20 });

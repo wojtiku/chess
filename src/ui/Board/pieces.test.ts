@@ -186,24 +186,72 @@ describe('the vendored files themselves', () => {
   const read = (name: string): string =>
     readFileSync(join(PIECES_DIR, name), 'utf8');
 
-  const WHITE_FILL = '#f6f5f1';
-  const BLACK_FILL = '#1d1f24';
+  /**
+   * A file's outline colour, read out of the file.
+   *
+   * This used to be two hardcoded hexes, and pinning the value turned out to be
+   * the wrong shape of assertion: the black pieces' outline was retuned from
+   * #f4ead6 to #d8c9b0 for a measured reason, and the test failed on a value that
+   * was never the thing being claimed. Worse, the knight kept passing — its eye is
+   * painted in the *other* file's outline colour, so `bN.svg` still contained
+   * #f4ead6 and the assertion was satisfied by the wrong pixel.
+   *
+   * What is actually claimed is a relationship: the two are outlined in opposite
+   * colours, and neither uses the other's. That survives any future retune, which
+   * is the test earning its keep rather than needing to be edited in step.
+   */
+  const outlineOf = (svg: string): string =>
+    svg.match(/stroke="(#[0-9a-f]{6})"/)?.[1] ?? '';
 
   /**
-   * Both palette values reduced to one token, so two documents that differ *only*
-   * by colour compare equal.
+   * The board's two square colours, written out rather than imported.
    *
-   * Written this way after two wrong versions. The first tried to substitute one
-   * palette for the other *within each file* and compared — which can never
-   * match, because `wP.svg` is `fill=light stroke=dark` and `bP.svg` is
-   * `fill=dark stroke=light`, so swapping each one lands them in opposite
-   * arrangements. The second used a space as the intermediate marker and rewrote
-   * every real space in the file, turning `viewBox="0 0 45 45"` into
-   * `viewBox="0#1d1f240#1d1f2445 45"`. Removing the colours entirely is the
-   * formulation the property actually has, and it needs no marker at all.
+   * `theme.css` is a stylesheet and there is nothing to import from it in a unit
+   * test, but the duplication is the point rather than an oversight: these are the
+   * two colours every piece has to be readable against, and a test that read them
+   * from the one source would be asserting that the source equals itself and would
+   * follow a palette change instead of catching it. If the board is repainted, this
+   * is the list that should make the pieces fail.
    */
-  const withoutColours = (svg: string): string =>
-    svg.replaceAll(WHITE_FILL, 'C').replaceAll(BLACK_FILL, 'C');
+  const SQUARES = { light: '#e0c9a4', dark: '#8f6244' } as const;
+
+  /** WCAG relative luminance. */
+  const luminance = (hex: string): number => {
+    const [r, g, b] = [1, 3, 5]
+      .map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+
+  /** WCAG contrast ratio, 1 to 21. */
+  const contrast = (a: string, b: string): number => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  /**
+   * Every hex colour, whatever it is for.
+   *
+   * This used to name two specific values and substitute them, which only worked
+   * because the files held exactly two. They now hold a gradient as well, and a
+   * white piece and a black piece do NOT have the same shading — a near-white top
+   * and a warm cream bottom on one, a warm charcoal top and a near-black bottom on
+   * the other. So the property is stated over every colour rather than over two:
+   * the two files are the same drawing *painted differently*, and the drawing is
+   * what must match.
+   */
+  const withoutColours = (svg: string): string => svg.replaceAll(/#[0-9a-f]{6}/gi, 'C');
+
+  /**
+   * XML comments, gone.
+   *
+   * Each side's `<defs>` carries a comment explaining the gradient, and the two
+   * explain themselves in different words — one stands alone, the other says "see
+   * the white pieces". They are prose about the artwork, not the artwork, and two
+   * files that differed only in their comments are the same drawing. Comparing them
+   * verbatim would have made this test a check on my prose.
+   */
+  const withoutComments = (svg: string): string => svg.replace(/<!--[\s\S]*?-->/g, '');
 
   /** Text that differs between the two files but is not artwork: "White" / "Black". */
   const stripSide = (svg: string): string =>
@@ -215,20 +263,82 @@ describe('the vendored files themselves', () => {
       const white = read(`w${letter}.svg`);
       const black = read(`b${letter}.svg`);
       // Both files exist and are not empty: a missing asset makes `read` throw,
-      // which is already a failure, and the assertion below would not run.
+      // which is already a failure, and the assertions below would not run.
       expect(white.length, `w${letter}.svg`).toBeGreaterThan(0);
       expect(black.length, `b${letter}.svg`).toBeGreaterThan(0);
-      // Not vacuous: each file really does use the palette, and in opposite
-      // arrangements. Without this, two files with no colour in them at all would
-      // satisfy the comparison below.
-      expect(white, `w${letter}.svg uses the light fill`).toContain(WHITE_FILL);
-      expect(black, `b${letter}.svg uses the dark fill`).toContain(BLACK_FILL);
+
+      // Not vacuous: each file really does have an outline, the two outlines are
+      // different, and neither file uses the other's. A pair of identical files
+      // would satisfy the geometry comparison below perfectly, and "the same
+      // drawing" is not the claim — "the same drawing, in opposite colours" is.
+      const whiteEdge = outlineOf(white);
+      const blackEdge = outlineOf(black);
+      expect(whiteEdge, `w${letter}.svg has an outline`).toMatch(/^#[0-9a-f]{6}$/);
+      expect(blackEdge, `b${letter}.svg has an outline`).toMatch(/^#[0-9a-f]{6}$/);
+      expect(whiteEdge, `w${letter}.svg and b${letter}.svg must differ`).not.toBe(blackEdge);
+      expect(white, `w${letter}.svg must not outline like the black piece`).not.toContain(blackEdge);
+      expect(black, `b${letter}.svg must not outline like the white piece`).not.toContain(whiteEdge);
+
+      // **The outline is load-bearing, and this is the number that says so.** A
+      // black piece's body is 2.71:1 against the dark square and a white piece's is
+      // about 1.1:1 against the light one — both under the 3:1 that means a shape is
+      // visible at all. So on the worst square for each piece, the outline is the
+      // only thing making it readable, and the two outlines are the values that keep
+      // them apart from the wood.
+      //
+      // Nothing else in the suite can see this. jsdom has no layout, no unit test
+      // renders a piece, and the geometry comparison above is byte-identical however
+      // the colours move. A retune that quietly darkens the black outline until the
+      // pieces sink into the brown squares would pass every other test here.
+      expect(contrast(whiteEdge, SQUARES.light), `${letter}: white outline on the light square`)
+        .toBeGreaterThanOrEqual(3);
+      expect(contrast(blackEdge, SQUARES.dark), `${letter}: black outline on the dark square`)
+        .toBeGreaterThanOrEqual(3);
+
       // The drawing itself: same viewBox, same stroke width, same paths, same
-      // order, same labels modulo the side.
-      expect(
-        stripSide(withoutColours(white)),
-        `w${letter}.svg vs b${letter}.svg`,
-      ).toBe(stripSide(withoutColours(black)));
+      // order, same labels modulo the side. Comments and colours aside.
+      const drawing = (svg: string) => stripSide(withoutComments(withoutColours(svg)));
+      expect(drawing(white), `w${letter}.svg vs b${letter}.svg`).toBe(drawing(black));
+
+      // And the two are genuinely different files, so the comparison above is
+      // comparing two real documents rather than one document to itself.
+      expect(white).not.toBe(black);
+    },
+  );
+
+  /**
+   * The shading, pinned.
+   *
+   * `gradientUnits="userSpaceOnUse"` is the one attribute in these twelve files
+   * that a reasonable person could "simplify" away and produce a piece that still
+   * looks like a piece in a thumbnail. The default is `objectBoundingBox`, which
+   * gives every SHAPE in the group a gradient relative to that shape's own box —
+   * so the rook's crenellations and its base are each fully shaded, and the piece
+   * bands into two unrelated objects stacked on a plinth. Nothing else in the suite
+   * can see that: the geometry is identical either way, and no unit test has a
+   * layout engine.
+   */
+  it.each(['P', 'N', 'B', 'R', 'Q', 'K'])(
+    'w%s.svg and b%s.svg are shaded by ONE gradient across the whole silhouette',
+    (letter) => {
+      for (const side of ['w', 'b']) {
+        const svg = read(`${side}${letter}.svg`);
+        const gradients = svg.match(/<linearGradient\b[^>]*>/g) ?? [];
+        // One, not one per shape: a second gradient is the banding described above
+        // arriving by a different route.
+        expect(gradients, `${side}${letter}.svg gradient count`).toHaveLength(1);
+        expect(gradients[0], `${side}${letter}.svg is user-space`).toContain('gradientUnits="userSpaceOnUse"');
+        // Spans the piece's height in the 45x45 viewBox rather than a 0-1 box.
+        expect(gradients[0], `${side}${letter}.svg span`).toMatch(/y1="\d+"/);
+        expect(gradients[0], `${side}${letter}.svg span`).toMatch(/y2="4[0-9]"/);
+        // Three stops is a top highlight, a body, and a shaded base.
+        expect(svg.match(/<stop\b/g) ?? [], `${side}${letter}.svg stops`).toHaveLength(3);
+      }
+      // And both sides are lit over the SAME range, or the two would not be the
+      // same object in different paint — one catching the light where the other
+      // does not.
+      const span = (side: string) => read(`${side}${letter}.svg`).match(/y1="[\d.]+" x2="[\d.]+" y2="[\d.]+"/)?.[0];
+      expect(span('w'), `w${letter} vs b${letter} light range`).toBe(span('b'));
     },
   );
 

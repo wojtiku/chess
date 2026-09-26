@@ -812,66 +812,58 @@ describe('App', () => {
     expect(levels).toContain(`${SKILL_OPTION}1`);
   });
 
-  // The theme is one field of the settings object, and it is the only preference
-  // with no control of its own in the difficulty panel — so the header's switch is
-  // the whole feature, and nothing else tests it.
-  it('flips the theme, and the flip reaches the document and storage', async () => {
-    const user = userEvent.setup();
-    storeSettings({ minThinkTimeMs: 0, theme: 'light' });
+  /**
+   * There is no theme, and the only thing worth asserting about a removed feature
+   * is that it stays removed.
+   *
+   * Two ways it could come back, and both are silent. A `data-theme` attribute on
+   * `<html>` is what the old two-palette stylesheet keyed on, so its return would
+   * bring a second palette with it and the app would be correct in the default case
+   * and wrong in the case nobody tested. And a stored `theme` from a returning
+   * learner is a value in `localStorage` that no code reads — if a future line
+   * started reading it, nothing here would notice.
+   */
+  it('has no theme switch, and puts no data-theme on the document', async () => {
+    storeSettings({ minThinkTimeMs: 0, skillLevel: 3 });
     render(<App />);
 
-    // The attribute on <html> is what the stylesheet keys on, and it is set in an
-    // effect rather than during render — so this asserts the effect ran, not that
-    // the markup happened to be right.
-    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('light'));
-    expect(screen.getByRole('button', { name: 'Switch to dark theme' })).toBeInTheDocument();
+    // The attribute, not a computed style: `color-scheme: dark` in `theme.css` is
+    // the app's only theme declaration, and it is a stylesheet concern.
+    expect(document.documentElement.getAttribute('data-theme')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /theme/i }),
+      'no control offers a theme',
+    ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Switch to dark theme' }));
-
-    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'));
-    // And it is persisted, so the learner does not get their OS preference back
-    // over their own choice on the next load.
-    await waitFor(() =>
-      expect(localStorage.getItem('chess.settings.v1')).toContain('"theme":"dark"'),
-    );
-
-    // Back the other way, and the button names the other action: a label that
-    // reports the current state instead of the next one tells a screen-reader user
-    // what they already know and leaves them guessing what pressing it does.
-    await user.click(screen.getByRole('button', { name: 'Switch to light theme' }));
-
-    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('light'));
-    expect(localStorage.getItem('chess.settings.v1')).toContain('"theme":"light"');
+    // And a move does not introduce one, since the old switch lived in an effect
+    // that ran on settings changes.
+    const user = userEvent.setup();
+    await play(user, 'e2', 'e4');
+    await waitFor(() => expect(moves()).toEqual(['e4', 'Nc6']), { timeout: 5000 });
+    expect(document.documentElement.getAttribute('data-theme')).toBeNull();
   });
 
-  it('keeps every other setting when the theme is flipped', async () => {
-    // A toggle that wrote `{ theme }` instead of `{ ...settings, theme }` would
-    // silently reset the difficulty, the think time, the orientation and the hint
-    // mode — and "I changed the theme and it started playing like a beginner" is
-    // exactly the bug that is invisible until it has happened.
-    const user = userEvent.setup();
-    storeSettings({
-      skillLevel: 1,
-      minThinkTimeMs: 1200,
-      orientation: 'b',
-      theme: 'light',
-      hintMode: 'good',
-    });
+  it('is unaffected by a theme stored by an earlier version', async () => {
+    // The migration, at the level the app sees it. `persistence.test.ts` covers
+    // the field being dropped from the loaded object; this covers the consequence
+    // a learner would actually notice — the app comes up dark either way, and the
+    // stale key is gone from storage rather than being carried forward forever.
+    // 13, not the default 8: the assertion below is that the stored value was
+    // READ, and a stored value equal to the default would look identical whether
+    // the loader honoured it or ignored everything and used the constant.
+    storeSettings({ minThinkTimeMs: 0, skillLevel: 13, theme: 'light' });
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: 'Switch to dark theme' }));
+    expect(document.documentElement.getAttribute('data-theme')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /theme/i }),
+      'a stored theme does not bring the switch back',
+    ).not.toBeInTheDocument();
 
-    await waitFor(() =>
-      expect(localStorage.getItem('chess.settings.v1')).toContain('"theme":"dark"'),
-    );
-    const stored = JSON.parse(localStorage.getItem('chess.settings.v1') ?? '{}');
-    expect(stored).toEqual({
-      skillLevel: 1,
-      minThinkTimeMs: 1200,
-      orientation: 'b',
-      theme: 'dark',
-      hintMode: 'good',
-    });
+    // The skill level still came through — the part that would really hurt if
+    // dropping the key had cost the learner their settings.
+    expect(screen.getByRole('radio', { name: 'Hard' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'Medium' })).toHaveAttribute('aria-checked', 'false');
   });
 
   it('flips the board without touching the game', async () => {

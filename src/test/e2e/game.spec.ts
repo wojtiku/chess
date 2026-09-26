@@ -563,26 +563,43 @@ test.describe('a full game', () => {
     await expect(page.locator('.movelist-move')).toHaveCount(3);
   });
 
-  test('flips the theme and keeps the flip across a reload', async ({ page }) => {
+  test('is dark, and stays dark whatever a previous version stored', async ({ page }) => {
+    // The counterpart to the unit test of the same name, and the only place the
+    // real stylesheet is involved. jsdom has no layout and no cascade, so a palette
+    // that exists only in a comment, or a `data-theme` that no rule reads, both
+    // pass every unit test in the suite — and this is what catches them.
     await page.goto('/');
-    const html = page.locator('html');
-    // The attribute on <html> is what the stylesheet keys on; the computed
-    // background is read as well, because a `data-theme` nobody's CSS reads would
-    // satisfy the attribute alone.
-    await expect(html).toHaveAttribute('data-theme', 'light');
 
-    await page.getByRole('button', { name: 'Switch to dark theme' }).click();
+    // No attribute, because the old two-palette stylesheet keyed on one and its
+    // return would mean a second palette had come back with it.
+    await expect(page.locator('html')).not.toHaveAttribute('data-theme', /.*/);
+    await expect(page.getByRole('button', { name: /theme/i })).toHaveCount(0);
 
-    await expect(html).toHaveAttribute('data-theme', 'dark');
-    const dark = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-    expect(dark, 'the dark theme must actually change the page').not.toBe('rgb(255, 255, 255)');
+    // `color-scheme` is what the browser uses for its own widgets — scrollbars,
+    // the range track, the select. Without it a dark app gets light scrollbars,
+    // which is the most common way a dark theme announces nobody asked.
+    const scheme = await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme);
+    expect(scheme, 'the document must declare dark to the browser').toBe('dark');
 
+    // And the page is actually dark, by computed background rather than by
+    // assertion about a stylesheet we just read.
+    const channels = async (): Promise<number[]> =>
+      (await page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+        .match(/\d+/g)!
+        .map(Number);
+    const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    expect(Math.max(...(await channels())), `body background ${bg} must be dark`).toBeLessThan(60);
+
+    // A stored theme from an earlier version must not bring the switch back or
+    // change a thing. Seeded and reloaded, because that is the only order in which
+    // a stored value is read.
+    await page.evaluate(() => {
+      localStorage.setItem('chess.settings.v1', JSON.stringify({ theme: 'light', skillLevel: 13 }));
+    });
     await page.reload();
-
-    await expect(html).toHaveAttribute('data-theme', 'dark');
-    // The coordinate labels are part of the same theme and must not have reverted
-    // with it: a board whose file letters disappeared is a real report.
-    await expect(page.locator('.coord-files span')).toHaveCount(8);
+    await expect(page.getByRole('button', { name: /theme/i })).toHaveCount(0);
+    const after = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    expect(after, 'a stored theme must not repaint the page').toBe(bg);
   });
 });
 
@@ -605,6 +622,17 @@ test.describe('a full game', () => {
 for (const [label, width, height, expectedBoard] of [
   ['a 390px phone', 390, 844, null],
   ['a 360px phone', 360, 640, null],
+  // The width that was broken, and the reason it is in this list at all. 900 is not
+  // a special size: it is the middle of the band between the stacking breakpoint
+  // and the width the side-by-side layout actually needs (924px, measured), and the
+  // original test enumerated a phone and a desktop and skipped everything between
+  // them. `scrollWidth` was 924 in a 900px viewport, so the page scrolled sideways
+  // there and this suite said nothing. A list of viewports is only as good as the
+  // gaps in it.
+  ['a 900px window', 900, 800, null],
+  // And a width above the breakpoint, so the side-by-side layout is pinned from
+  // below as well as the phone layout from above.
+  ['a 1024px window', 1024, 800, 560],
   ['a desktop viewport', 1440, 900, 560],
 ] as const) {
   test(`the board fits ${label} without sideways scrolling`, async ({ page }) => {
@@ -786,7 +814,6 @@ test('the advice is unhandicapped whatever strength the learner picked', async (
             skillLevel: level,
             minThinkTimeMs: 0,
             orientation: 'w',
-            theme: 'light',
             hintMode: 'best',
           }),
         );
