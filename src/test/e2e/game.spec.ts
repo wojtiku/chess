@@ -1036,3 +1036,57 @@ test('the five presets are the difficulty interface until the panel is opened', 
   await expect(panel).toHaveCount(0);
   await expect(presets).toBeVisible();
 });
+
+test('every button is a visible surface against the page, not an outline on a wall', async ({ page }) => {
+  // The brief was "make the buttons more distinctive from the background", and it
+  // is the kind of request that quietly stops being true: nobody notices a control
+  // blending into the panel until they cannot find it, and by then it is a report
+  // rather than a change.
+  //
+  // Why a browser and not a unit test: this is two computed background colours, and
+  // jsdom has no cascade. A stylesheet with no button rules at all passes every
+  // unit test in this project.
+  await page.goto('/');
+  await expect(page.getByRole('grid', { name: 'Chess board' })).toBeVisible();
+
+  const luminance = (rgb: number[]) => {
+    const [r, g, b] = rgb.map((v) => v / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const ratio = (a: number[], b: number[]) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  const parse = (s: string) => (s.match(/\d+/g) ?? []).map(Number);
+
+  const pageBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  // Role and name, because the difficulty presets are `role="radio"` inside a
+  // `radiogroup` and not buttons — asking for them by the button role times out,
+  // which is a confusing way to learn that a control is a radio.
+  const samples: ReadonlyArray<readonly ['button' | 'radio', string]> = [
+    ['button', 'Hint'],
+    ['button', 'Undo'],
+    ['button', 'Resign'],
+    ['button', 'New game'],
+    ['button', 'First move'],
+    ['radio', 'Beginner'],
+    ['radio', 'Easy'],
+    ['radio', 'Hard'],
+    ['radio', 'Expert'],
+  ];
+
+  for (const [role, name] of samples) {
+    const bg = await page.getByRole(role, { name, exact: true }).evaluate(
+      (el) => getComputedStyle(el).backgroundColor,
+    );
+    // **1.15 is the line, and it is measured.** The button surface is #2a231b on a
+    // #15120f page: 1.21:1. What it replaced was #1e1a16, which is 1.07:1 — a
+    // difference of 9 in each channel, i.e. the same wall with a 1px line drawn on
+    // it. So 1.15 sits above the old value with room to spare and below the new one,
+    // and a revert to the previous palette fails here rather than in a bug report.
+    // It is a low bar on purpose: this is a *surface separation* test, not a text
+    // contrast test, and the label's own contrast is checked where it belongs.
+    expect(ratio(parse(bg), parse(pageBg)), `${name} against the page`).toBeGreaterThan(1.15);
+  }
+});

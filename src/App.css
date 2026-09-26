@@ -28,10 +28,10 @@
   flex: 1; min-width: 260px;
 }
 .app-hints { display: flex; gap: 6px; }
-.app-hints button {
-  flex: 1; padding: 7px 10px; border-radius: 6px; cursor: pointer;
-  border: 1px solid var(--edge); background: var(--panel); color: inherit; font: inherit;
-}
+/* Layout only — the surface, border and highlight of a button are one shared rule
+   in `theme.css`, so every pressable thing in the app looks like it came from the
+   same hand. */
+.app-hints button { flex: 1; padding: 7px 10px; border-radius: 6px; cursor: pointer; font: inherit; }
 .app-hints button:disabled { opacity: 0.45; cursor: not-allowed; }
 .app-hint-line { margin: 0; font-size: 13px; }
 /* **960, and the number is measured.** This was 860, which was wrong by 100px and

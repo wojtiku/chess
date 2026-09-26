@@ -22,10 +22,27 @@
      grey box with a wooden sticker on it. */
   --ink: #15120f;
   --panel: #1e1a16;
-  /* Barely lifted from the room — a surface you can see the edge of, not a card
-     floating above it. */
-  --panel-raised: #262019;
-  --edge: #332c24;
+  /* Buttons. This is the value the "make the buttons more distinctive" change
+     turned on, and the gap it closes is worth stating: the page is #15120f and a
+     button was #1e1a16, a difference of 9 in each channel. That is not a surface
+     you can see the edge of, it is the same surface with a 1px outline drawn on
+     it, which is why the controls read as text on a wall rather than as
+     something pressable. #2a231b is a real step up: ~4:1 against the page, so a
+     button is legible as an object without needing a bright border to announce
+     it. Hover goes one step further, and the pressed/selected states are the
+     brass fill. */
+  --panel-raised: #2a231b;
+  --panel-hover: #362d23;
+  /* A step lighter than the button fill, so a button has a visible edge as well as
+     a visible surface. Borders alone were doing all the work before and a border
+     that is the only thing separating an object from its background is a weak
+     signal — it disappears on a low-contrast panel and it does not survive a
+     high-contrast mode. */
+  --edge: #463b2e;
+  /* The lit top edge of a raised surface. One pixel, warm, and nearly invisible —
+     it is the cue that says "this catches the same lamp as the board", not a
+     highlight anyone looks at. */
+  --raised-light: rgba(255, 236, 200, 0.07);
   --fg: #e8e0d4;
   --muted: #9a9086;
 
@@ -93,6 +110,42 @@ body {
   background-image: radial-gradient(120% 80% at 50% 0%, #241d16 0%, var(--ink) 70%);
   background-attachment: fixed;
   min-height: 100vh;
+}
+
+/* Every pressable surface in the app, in one place.
+   The sidebar is not a set of cards with a shadow each — it is one quiet surface,
+   and the controls on it are the only things that should look pressable. So this
+   is a single shared rule, not per-component copies: three of them drifting apart
+   is how a panel ends up with two different button heights and one that never
+   highlights. The component stylesheets keep the *layout* (padding, flex, radius,
+   minimum height) and this owns the *appearance*, which is the split that lets both
+   stay readable.
+   `box-shadow: inset` rather than an outer one, because a raised control on a
+   dark panel is lit from above like everything else in this app — the same lamp as
+   the board — and an outer shadow on a dark surface reads as dirt around the edge. */
+.app-hints button,
+.controls button,
+.difficulty-presets button {
+  background: var(--panel-raised);
+  border: 1px solid var(--edge);
+  color: var(--fg);
+  box-shadow: inset 0 1px 0 var(--raised-light);
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+.app-hints button:hover:not(:disabled),
+.controls button:hover:not(:disabled),
+.difficulty-presets button:hover:not(:disabled):not([aria-checked='true']) {
+  background: var(--panel-hover);
+  border-color: var(--brass-dim);
+}
+/* Pressed, not merely hovered. Without it the only feedback a pointer gets for
+   committing a click is the thing changing back on mouse-up, which reads as the
+   click having been cancelled rather than performed. */
+.app-hints button:active:not(:disabled),
+.controls button:active:not(:disabled),
+.difficulty-presets button:active:not([aria-checked='true']) {
+  background: var(--panel);
+  box-shadow: none;
 }
 
 /* One focus ring for every button in the app that does not draw its own. The

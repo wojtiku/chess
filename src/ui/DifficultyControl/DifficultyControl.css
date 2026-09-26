@@ -1,13 +1,7 @@
 .difficulty { display: flex; flex-direction: column; gap: 10px; }
 .difficulty-presets { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
-.difficulty-presets button {
-  padding: 6px 2px; font-size: 12px; border-radius: 6px; cursor: pointer;
-  border: 1px solid var(--edge); background: var(--panel); color: inherit;
-  transition: background-color 120ms ease, border-color 120ms ease;
-}
-.difficulty-presets button:hover:not(:disabled):not([aria-checked='true']) { background: var(--panel-raised); }
-/* Brass fill with `--on-brass` text rather than the old white, for the reason in
-   ResultBanner.css: white on brass is not a legible pairing. */
+
+.difficulty-presets button { padding: 6px 2px; font-size: 12px; border-radius: 6px; cursor: pointer; }
 .difficulty-presets button[aria-checked='true'] {
   background: var(--brass); color: var(--on-brass); border-color: var(--brass); font-weight: 600;
 }

@@ -61,10 +61,25 @@ square, and one step warmer (`#c9b89c`) drops to 2.71:1, at which point the blac
 pieces start sinking into the squares they stand on. `pieces.test.ts` computes these
 ratios, so a retune that breaks them fails the suite.
 
-The knight's eye is the only interior detail in the set, and it is there because at
-45px the difference between "horse" and "lump with a spike on it" is one dot. It is
-painted in that file's *outline* colour, so the black knight's eye is the dark warm
-value and the white knight's is the light one.
+**The interior details, and why they are drawn last.** There are two: the knight's
+eye, and the bishop's mitre slit. Both are painted in the file's own *outline*
+colour — the black knight's eye is the dark warm value and the white knight's is the
+light one — and both are drawn **after** the fill pass rather than inside the
+stroked group. That is forced by the two-pass technique: the second group fills the
+shapes again with no stroke to cover the interior seams, so anything drawn inside
+the first group is painted over. A detail that has to survive the second pass has to
+be a separate mark on top.
+
+Both are there for the same reason, which is size: at 45px the difference between
+"horse" and "lump with a spike on it" is one dot, and the difference between a
+bishop and an egg is one line. Without them the knight and the bishop are the two
+least identifiable pieces in the set at the size the board actually renders them.
+
+The knight was redrawn from scratch after the first version proved unreadable — it
+was a rounded lump with a spike, and read as a cat or a seal at 45px. The version
+that shipped has a muzzle that projects forward with a defined lower lip, a jaw
+line separating the cheek from the throat, and a single ear. The two-ear version it
+replaced was the specific mistake: two pointed ears on a rounded skull is a cat.
 
 The white and black versions of each piece are the same drawing, lit over the same
 range, painted differently. **What the check does**, precisely: `pieces.test.ts`
