@@ -35,7 +35,17 @@
 .board-wrap {
   position: relative;
   grid-area: 1 / 2;
-  width: min(90vmin, 560px);
+  /* `90vmin` on its own is 90% of the *short* viewport edge, and everything beside
+     the board needs the rest: the eval bar (34px), the 8px gap, the rank gutter,
+     and `.app`'s 32px of padding. On a 390px phone that is about 84px of
+     furniture, so `90vmin` left the page 7px wider than the viewport and the
+     board scrolled sideways — measured in Chromium, and spec §8 says the board
+     "stays fully visible without scrolling".
+     *
+     * The 60 is the measured total, rounded up with a little slack. On a desktop
+     * viewport it changes nothing: `90vmin - 60px` is 810-60 = 750 there, well
+     * past the 560px cap, so the board is still 560px exactly. */
+  width: min(90vmin - 60px, 560px);
 }
 
 .board {

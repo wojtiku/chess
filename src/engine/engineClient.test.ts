@@ -642,8 +642,21 @@ describe('EngineClient', () => {
 
       const { w } = await boot(c);
 
-      // Exactly one Skill Level line, and it is the one that was asked for.
-      expect(w.sentMatching(SKILL)).toEqual(['setoption name Skill Level value 13']);
+      // Two Skill Level lines, and the order is the whole contract:
+      //
+      //   1. 13 — from `newGame()`, because that is the boot path and it sends the
+      //      **play** level, which is what was asked for.
+      //   2. 20 — from `search()` itself, because a search with no explicit level is
+      //      an *advice* search and advice runs at full strength.
+      //
+      // This test used to expect exactly one line. It is the test that should
+      // have caught the review's Critical: before the fix, `search` sent no
+      // `setoption` at all, so the single line was the play level and the analysis
+      // ran handicapped.
+      expect(w.sentMatching(SKILL)).toEqual([
+        'setoption name Skill Level value 13',
+        'setoption name Skill Level value 20',
+      ]);
       c.dispose();
     });
 
@@ -843,8 +856,17 @@ describe('EngineClient', () => {
       expect(r.bestMove).toBe('d2d4');
       expect(c.status).toBe('ready');
       expect(c.error).toBeNull();
-      // A replacement worker has no engine options until it is told.
-      expect(w2.sentMatching(SKILL)).toEqual(['setoption name Skill Level value 8']);
+      // A replacement worker has no engine options until it is told, and it is
+      // told twice: 8 by the `newGame` that boots it (the play level, the default
+      // here) and then 20 by `search` itself, because an advice search is not
+      // handicapped. **The second line is the load-bearing one** — a client that
+      // believed the engine was already at 20 and skipped the write would search
+      // the replacement at 8, which is why `ensureWorker` resets
+      // `skillLevelInEffect` to null.
+      expect(w2.sentMatching(SKILL)).toEqual([
+        'setoption name Skill Level value 8',
+        'setoption name Skill Level value 20',
+      ]);
       c.dispose();
     });
 

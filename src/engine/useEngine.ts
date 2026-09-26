@@ -20,7 +20,12 @@
 //    to explain why.
 
 import { useEffect, useMemo, useState } from 'react';
-import { EngineClient, EngineError, type EngineStatus } from '../engine/engineClient';
+import {
+  ADVICE_SKILL_LEVEL,
+  EngineClient,
+  EngineError,
+  type EngineStatus,
+} from '../engine/engineClient';
 import { makeEngineSource, type Analysis } from '../analysis/evaluate';
 import { createSearchQueue } from './searchQueue';
 
@@ -92,7 +97,20 @@ function openDoor(client: EngineClient): Door {
   const queue = createSearchQueue(() => client.interrupt());
 
   return {
-    analyze: (fen, opts) => queue.enqueue(() => source.analyze(fen, opts), false),
+    // **The advice channel runs at full strength, always.** `analyze` serves both
+    // the eval bar and the hint, both are advice, and the spec's stated reason for
+    // choosing Stockfish is that "weaker engines give advice that is sometimes
+    // wrong, which is worse than no advice" (§3). `Skill Level` WAS reaching these
+    // searches — UCI `setoption` is sticky, and `newGame()` was the only thing that
+    // set it — so a learner on Beginner was told a position eight pawns up was
+    // level. The level is now stated on the search, and this is the call that
+    // supplies it.
+    //
+    // Said here as well as in `engineClient` because this is where the two channels
+    // are told apart, and it is the one line a well-meaning edit is most likely to
+    // break: `bestMove` two lines below deliberately does NOT do this.
+    analyze: (fen, opts) =>
+      queue.enqueue(() => source.analyze(fen, { ...opts, skillLevel: ADVICE_SKILL_LEVEL }), false),
     // `search` rather than `analyze`: the reply needs the `bestmove` line, and
     // `Analysis` deliberately models an evaluation, not a move.
     //
@@ -112,9 +130,20 @@ function openDoor(client: EngineClient): Door {
     // the engine layer refuses the interrupted result because the position is not
     // the only thing that can invalidate an answer. Dropping either leaves a real
     // hole, so please do not helpfully collapse them into one.
+    //
+    // `skillLevel: client.playLevel` and nothing else. **This is the reply, and the
+    // reply is the one search that is supposed to be handicapped** — it is the
+    // opponent's own move, and the spec (§6.3) puts the effect of `Skill Level` on
+    // the opponent's next move and nowhere else. Omitting it would be a
+    // simplification that reads like the `analyze` line above, and it would trade
+    // the advice channel being full strength for the opponent also being full
+    // strength, which is a strictly worse version of the same mistake.
     bestMove: (fen, movetimeMs) =>
       queue.enqueue(async () => {
-        const result = await client.search(fen, { movetimeMs });
+        const result = await client.search(fen, {
+          movetimeMs,
+          skillLevel: client.playLevel,
+        });
         if (result.aborted) {
           throw new EngineError('aborted', 'Search interrupted by a newer request');
         }

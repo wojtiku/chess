@@ -120,6 +120,23 @@ const engineStatus = (page: Page) => page.locator('.engine-status');
  */
 const hintButton = (page: Page) => page.getByRole('button', { name: 'Hint', exact: true });
 
+/**
+ * `1.a3 c6 2.b4 Qa5 3.bxa5 Na6` — a real (if hopeless) game in which White takes
+ * the black queen. Found by breadth-first search over legal moves and checked
+ * against chess.js, because an illegal move in storage is **discarded whole**: the
+ * app would open on the start position with no error, and every assertion below
+ * would be about the start position instead.
+ *
+ * Stored rather than played, so the position is exactly this one rather than "this
+ * one plus whatever Black replied" — and the eval questions need a position whose
+ * correct answer is not in doubt.
+ */
+const WON_POSITION = [
+  { from: 'a2', to: 'a3' }, { from: 'c7', to: 'c6' },
+  { from: 'b2', to: 'b4' }, { from: 'd8', to: 'a5' },
+  { from: 'b4', to: 'a5' }, { from: 'b8', to: 'a6' },
+] as const;
+
 test.describe('a full game', () => {
   // No `beforeEach` storage clearing, deliberately. Playwright gives each test its
   // own browser context, so `localStorage` is already empty and the app opens on a
@@ -561,6 +578,55 @@ test.describe('a full game', () => {
   });
 });
 
+/**
+ * Spec §8: the board "scales to the viewport and stays fully visible without
+ * scrolling".
+ *
+ * A CSS-only property, so it can only be checked in a browser — jsdom applies no
+ * layout and would pass this against any stylesheet at all, including no
+ * stylesheet. It is here because `min(90vmin, 560px)` did overflow: measured in
+ * Chromium at 390×844, `scrollWidth` was 397 in a 390px viewport, because
+ * everything beside the board — the eval bar, the gap, the rank gutter, the app's
+ * padding — needs the last 84px of the viewport that 90% of it had already spent.
+ *
+ * **Both halves are asserted.** "No overflow" alone would pass with a board of
+ * zero width, and the desktop case is what stops the fix becoming a regression:
+ * `90vmin - 60px` is 750px on a 1440×900 screen, so the 560px cap must still be
+ * what applies there, or every desktop user would get a smaller board.
+ */
+for (const [label, width, height, expectedBoard] of [
+  ['a 390px phone', 390, 844, null],
+  ['a 360px phone', 360, 640, null],
+  ['a desktop viewport', 1440, 900, 560],
+] as const) {
+  test(`the board fits ${label} without sideways scrolling`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto('/');
+    await expect(page.getByRole('grid', { name: 'Chess board' })).toBeVisible();
+
+    const measured = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+      board: Math.round(
+        document.querySelector('.board')!.getBoundingClientRect().width,
+      ),
+    }));
+
+    expect(
+      measured.scrollWidth,
+      `content is ${measured.scrollWidth}px wide in a ${measured.clientWidth}px viewport`,
+    ).toBeLessThanOrEqual(measured.clientWidth);
+    if (expectedBoard !== null) {
+      expect(measured.board, 'the desktop cap must survive the phone fix').toBe(
+        expectedBoard,
+      );
+    } else {
+      // Not a zero-width board that trivially does not overflow.
+      expect(measured.board).toBeGreaterThan(200);
+    }
+  });
+}
+
 test('the board shows its coordinates, and hides them from a screen reader', async ({ page }) => {
   await page.goto('/');
 
@@ -613,27 +679,16 @@ test('the eval bar follows the engine, and it points the right way', async ({ pa
   // test was a coin flip. A position where White is a queen up has no such
   // ambiguity — a bar stuck at 50 there is a real failure and not a rounding.
   //
-  // The fixture is a real (if hopeless) game found by breadth-first search over
-  // legal moves and checked against chess.js: `1.a3 c6 2.b4 Qa5 3.bxa5 Na6`, after
-  // which White has taken the black queen and it is White's move. Storing the move
-  // list rather than playing it keeps the engine out of the fixture, so the
-  // position is exactly this one rather than "this one plus whatever Black replied".
-  await page.addInitScript(() => {
+  // The fixture is `WON_POSITION`, shared with the handicap test below: a real
+  // game in which White takes the black queen, stored rather than played so the
+  // position is exactly this one and the engine is not a party to it.
+  await page.addInitScript((moves: unknown) => {
     try {
-      localStorage.setItem(
-        'chess.game.v1',
-        JSON.stringify({
-          moves: [
-            { from: 'a2', to: 'a3' }, { from: 'c7', to: 'c6' },
-            { from: 'b2', to: 'b4' }, { from: 'd8', to: 'a5' },
-            { from: 'b4', to: 'a5' }, { from: 'b8', to: 'a6' },
-          ],
-        }),
-      );
+      localStorage.setItem('chess.game.v1', JSON.stringify({ moves }));
     } catch {
       // A browser that refuses storage cannot be given a position.
     }
-  });
+  }, WON_POSITION);
   await page.goto('/');
 
   // The fixture was accepted, not discarded: six plies, and the black queen is
@@ -669,4 +724,91 @@ test('the eval bar follows the engine, and it points the right way', async ({ pa
   // that moved while the text stayed at "—" would be a bar driven by something
   // other than the engine's score.
   await expect(page.locator('.evalbar-label')).toHaveText(/^\+\d+\.\d$/);
+});
+
+/**
+ * The review's CRITICAL, and the test that must never be deleted.
+ *
+ * UCI `setoption` is sticky, so a `Skill Level` sent for the opponent's move used
+ * to stay in force for every evaluation and every hint. Stockfish's `Skill Level`
+ * does not merely pick worse moves — below 20 it substitutes a reduced-accuracy
+ * evaluation net from root depth 4 down — so the *score* was handicapped too, and
+ * the eval bar and the hint were both the handicapped opponent talking.
+ *
+ * Measured in this very position before the fix, three runs each:
+ *
+ * ```
+ *   Skill  1   89 +8.6  arrow a1-a2  |  89 +8.7  d2-d3  |  90 +8.8  c1-b2
+ *   Skill  8   88 +8.5  arrow d2-d4  |  50 0.0   f2-f4  |  88 +8.5  d2-d4
+ *   Skill 20   90 +8.8  arrow c1-b2  (8 runs, identical)
+ * ```
+ *
+ * At Skill 8 the app told a learner that being eight pawns up was dead level and
+ * advised pushing a pawn. **A fake worker with hard-coded scores cannot see this**,
+ * which is why it survived eleven task reviews; the `setoption` bytes are asserted
+ * in `App.test.tsx` and the consequence is asserted here.
+ */
+test('the advice is unhandicapped whatever strength the learner picked', async ({ page }) => {
+  test.setTimeout(180_000);
+
+  /** The advice the app gives in this position at one opponent strength. */
+  const adviceAt = async (skillLevel: number): Promise<{ share: string; label: string; arrow: string }> => {
+    await page.addInitScript(
+      ([moves, level]: [unknown, number]) => {
+        // The difficulty is in the STORED SETTINGS, so the app's very first
+        // analysis already runs at that level. Setting it by clicking the radio
+        // after mount does NOT reproduce the bug: the start position's evaluation
+        // is already cached from the default level, so the handicapped search never
+        // happens and the test passes against a broken app. That shape was tried
+        // first and is why this is written this way.
+        localStorage.setItem('chess.game.v1', JSON.stringify({ moves }));
+        localStorage.setItem(
+          'chess.settings.v1',
+          JSON.stringify({
+            skillLevel: level,
+            minThinkTimeMs: 0,
+            orientation: 'w',
+            theme: 'light',
+            hintMode: 'best',
+          }),
+        );
+      },
+      [WON_POSITION, skillLevel] as [unknown, number],
+    );
+    await page.goto('/');
+    await expect(page.locator('.movelist-move')).toHaveCount(6, { timeout: 30_000 });
+    // Causal wait, as above: the search starts, then it ends.
+    await expect(page.getByText('Engine is thinking…')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText('Engine ready')).toBeVisible({ timeout: 60_000 });
+
+    await page.getByRole('button', { name: 'Hint', exact: true }).click();
+    await expect(page.locator('.arrows line')).toHaveCount(1, { timeout: 60_000 });
+    return {
+      share: (await page.getByTestId('eval-bar').getAttribute('data-white-share')) ?? '',
+      label: (await page.locator('.evalbar-label').textContent()) ?? '',
+      arrow: (await page.locator('.arrows line').getAttribute('data-testid')) ?? '',
+    };
+  };
+
+  // Skill 20 first: it is the unhandicapped reference, and it was measured 8 times
+  // out of 8 to be deterministic in this position, so it is a fair thing to
+  // compare against.
+  const expert = await adviceAt(20);
+  const beginner = await adviceAt(1);
+
+  // **The invariant.** The opponent is handicapped; the advice is not. If the
+  // strength setting can still reach an evaluation, these differ — and the
+  // difference is not a rounding wobble, it is a different move and sometimes a
+  // score of 0.0 in a position worth +8.8.
+  expect(
+    beginner,
+    `the advice must not depend on the opponent's strength: Beginner ${JSON.stringify(beginner)} vs Expert ${JSON.stringify(expert)}`,
+  ).toEqual(expert);
+
+  // And the absolute claim, which a shared-value pair of *wrong* answers would
+  // also satisfy: eight pawns up is not level, at any setting.
+  expect(Number(beginner.share), 'a queen up must not read as level').toBeGreaterThan(50);
+  expect(beginner.label).toMatch(/^\+[1-9]\d?\.\d$/);
+  // The arrow is the hint's own claim about which move to play.
+  expect(beginner.arrow).toBe(expert.arrow);
 });

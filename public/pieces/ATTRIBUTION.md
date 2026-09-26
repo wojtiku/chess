@@ -49,7 +49,11 @@ The knight's eye is the only interior detail in the set, and it is there because
 at 45px the difference between "horse" and "lump with a spike on it" is one dot.
 
 The white and black versions of each piece are the same geometry with the two
-colours swapped, which is checked rather than assumed.
+colours swapped, which is checked rather than assumed: `pieces.test.ts` asserts that
+`wX.svg` and `bX.svg` are byte-identical once the two hex colour values are
+substituted for each other. Twelve identical copies with two pixels of palette
+swapped would fail that, and so would a set where one piece was quietly drawn at a
+different size from its twin.
 
 **Filenames are lowercase colour, uppercase piece letter** — `wQ`, `bK`. This is
 load-bearing in a way that is invisible on macOS: a set written as `WQ.svg` works

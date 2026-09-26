@@ -40,13 +40,22 @@ function isSide(value: string): value is Side {
 
 /** Whether `type` is a piece this table has artwork for.
  *
- * A membership test rather than a cast, and the same reason `Captured` filters on
- * `cell.type in VALUE`: `PieceType` is a compile-time claim about a string the
- * DOM or the library produced at runtime, and a seventh letter must be a `null`
- * this function can report — not an `undefined` that renders as a broken image or
- * throws on a property read. */
+ * `Object.hasOwn`, and the review that found the previous version is why this
+ * comment is specific rather than reassuring. The old line was `value in NAMES`,
+ * described as "a membership test" — but **`in` walks the prototype chain**, so
+ * `'toString' in NAMES` is `true` and the old code answered a piece whose type was
+ * the string `"function toString() { [native code] }"`. Neither that nor
+ * `'__proto__'` is reachable from chess.js, so it was never a live bug; it is
+ * fixed here because it is cheap and because the comment was making a claim the
+ * code did not support, which is the self-referential pattern this branch's
+ * reviews exist to remove.
+ *
+ * The cast it replaces: `PieceType` is a compile-time claim about a string the
+ * DOM or the library produced at runtime, and a seventh letter has to be a
+ * `null` this function can report — not an `undefined` that renders as a broken
+ * image or throws on a property read. */
 function isPieceType(value: string): value is PieceType {
-  return value in NAMES;
+  return Object.hasOwn(NAMES, value);
 }
 
 /** The SVG file stem for a piece — `wQ` — or `null` for one this set has no

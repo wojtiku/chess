@@ -38,6 +38,34 @@ export interface SearchResult {
  * search failure: 20s is far longer than a healthy lite build needs. */
 const HANDSHAKE_TIMEOUT_MS = 20_000;
 
+/**
+ * The `Skill Level` every advice search runs at.
+ *
+ * **The opponent is handicapped. The advice is not, and this constant is the
+ * reason.** UCI `setoption` is sticky — the last-sent value stays in force until
+ * it is changed again — and before this existed, the only places `Skill Level` was
+ * ever sent were `newGame()` and the hook's effect. So the learner's chosen
+ * opponent strength was in force for **every evaluation and every hint**, at every
+ * difficulty. Stockfish's `Skill Level` does not merely pick worse moves: below
+ * Skill 20 it substitutes a reduced-accuracy evaluation net from root depth 4
+ * down, so the *score* is handicapped too.
+ *
+ * Measured against the real engine, in the position `1.a3 c6 2.b4 Qa5 3.bxa5 Na6`
+ * (White a queen up, White to move) — see `game.spec.ts` for the permanent test:
+ *
+ * ```
+ *   Skill  1   eval 50  "0.0"   hint e4      <- eight pawns up, advised a pawn push
+ *   Skill 20   eval 90  "+8.8"  hint Bb2
+ * ```
+ *
+ * The spec chose Stockfish precisely because "weaker engines give advice that is
+ * sometimes wrong, which is worse than no advice" (§3), scoped `Skill Level` to
+ * "playing below full strength" (§3) and to the opponent's "next move" (§6.3).
+ * Applying it to the advice channel contradicted all three and nobody wrote it
+ * down.
+ */
+export const ADVICE_SKILL_LEVEL = 20;
+
 /** Head-room above `go movetime` before a search is declared dead. The engine
  * honours `go movetime` and answers well inside its budget; the plan's real
  * budgets are 1500ms (opponent) and 3000ms (hint/analysis), so this ceiling
@@ -145,7 +173,31 @@ export class EngineClient {
   private worker: Worker | null = null;
   private statusValue: EngineStatus = 'idle';
   private errorValue: EngineError | null = null;
-  private skillLevel = DEFAULT_SKILL_LEVEL;
+  /**
+   * The level the **opponent plays** at: what `setSkillLevel()` was last told, and
+   * what `newGame()` re-sends.
+   *
+   * Kept separate from `skillLevelInEffect` because the two genuinely differ. UCI
+   * `setoption` is sticky, so a single "the level" would mean two things at once —
+   * the learner's chosen strength, and whatever the last search happened to run at
+   * (an advice search runs at 20; see `ADVICE_SKILL_LEVEL`). Conflating them is
+   * not a style point: after a worker is dropped and rebuilt, `newGame` re-sends
+   * *this* field, so a shared field would promote the opponent to full strength
+   * and trade C1 for a worse bug.
+   */
+  private playSkillLevel = DEFAULT_SKILL_LEVEL;
+  /**
+   * What the live engine is actually set to, or `null` when that is not known.
+   *
+   * `null` is the honest initial value and is set again for every fresh worker,
+   * because a new worker starts at Stockfish's own default of 8 regardless of what
+   * this client last sent. `search()` compares against it to avoid re-sending a
+   * `setoption` on every hot-path search, and **that optimisation is only sound
+   * because a rebuilt worker resets it to `null`** — without that, a client that
+   * believed the engine was at 20 would skip the write and the engine would search
+   * at 8.
+   */
+  private skillLevelInEffect: number | null = null;
   private pending: PendingSearch | null = null;
   /** Ids of searches whose `go` has been answered by nobody yet, oldest first.
    *
@@ -226,6 +278,9 @@ export class EngineClient {
     w.addEventListener('message', this.onMessage);
     w.addEventListener('error', this.onError);
     this.worker = w;
+    // A fresh worker has never been told anything, so what it holds is unknown
+    // rather than whatever the previous worker was set to.
+    this.skillLevelInEffect = null;
     return w;
   }
 
@@ -452,13 +507,16 @@ export class EngineClient {
     w.postMessage(cmd.ucinewgame());
     // Re-sent after every ucinewgame (plan: the difficulty presets), so a client
     // that boots through newGame() rather than through a search is configured
-    // too, and a repeat newGame() is still idempotent.
-    w.postMessage(cmd.setSkillLevel(this.skillLevel));
+    // too, and a repeat newGame() is still idempotent. The **play** level, not
+    // `skillLevelInEffect`: a new game resets the engine's state, so this is the
+    // point that decides what the opponent will play at next.
+    w.postMessage(cmd.setSkillLevel(this.playSkillLevel));
+    this.skillLevelInEffect = this.playSkillLevel;
     this.setStatus('ready');
   }
 
   async setSkillLevel(level: number): Promise<void> {
-    this.skillLevel = level;
+    this.playSkillLevel = level;
     const w = this.worker;
     // No worker yet: the level is stored and sent by the next newGame(), which
     // always re-sends it. Posting it mid-search is safe — the engine only reads
@@ -466,11 +524,37 @@ export class EngineClient {
     if (w === null) return;
 
     w.postMessage(cmd.setSkillLevel(level));
+    this.skillLevelInEffect = level;
   }
 
+  /** The level the opponent plays at. The door needs it per reply, and the only
+   *  thing that declares it is `setSkillLevel` — which is why this is a getter
+   *  rather than a copy the door took once and could not keep fresh. */
+  get playLevel(): number {
+    return this.playSkillLevel;
+  }
+
+  /**
+   * Search `fen`, and report the result in the engine's own frame of reference.
+   *
+   * `skillLevel` is **scoped to this search** and defaults to
+   * `ADVICE_SKILL_LEVEL`, not to the level `setSkillLevel()` last set. That default
+   * is the whole point: the opponent is handicapped, the advice is not, and a
+   * sticky `setoption` means the only way to be sure of a search's strength is to
+   * state it on the search itself. A caller that genuinely wants the play level —
+   * `bestMove`, and only `bestMove` — passes it explicitly; anything that does not
+   * know about the concept gets the advice channel by default, so a new caller
+   * cannot inherit the bug.
+   *
+   * The option is sent only when it differs from `skillLevelInEffect`, the client's
+   * record of what the live engine holds. Sending it unconditionally would be
+   * correct too and strictly simpler, and it is not: it is one extra line per
+   * search, on the hot path of every reply and every evaluation, for a value that
+   * rarely changes.
+   */
   async search(
     fen: string,
-    opts: { movetimeMs: number; multiPv?: number },
+    opts: { movetimeMs: number; multiPv?: number; skillLevel?: number },
   ): Promise<SearchResult> {
     // ensureWorker() first: on a fresh client it moves the status to 'loading',
     // which is what makes the boot gate below fire.
@@ -482,6 +566,19 @@ export class EngineClient {
     this.supersedePendingSearch();
 
     const multiPv = opts.multiPv ?? 1;
+    // Before `position` and `go`, and only when it differs: the engine reads its
+    // options when the *next* search starts, so posting it here cannot disturb an
+    // in-flight one — and the door in `useEngine` serialises searches anyway, so
+    // there is never another search to interleave with. No restore afterwards: the
+    // next `search` states its own level, and the next `bestMove` passes the play
+    // level explicitly, so a leftover 20 cannot outlive the search that wanted it.
+    // Restoring would be equally correct and would add a second write to a value
+    // every caller now declares for itself.
+    const skillLevel = opts.skillLevel ?? ADVICE_SKILL_LEVEL;
+    if (skillLevel !== this.skillLevelInEffect) {
+      w.postMessage(cmd.setSkillLevel(skillLevel));
+      this.skillLevelInEffect = skillLevel;
+    }
     w.postMessage(cmd.setMultiPv(multiPv));
     w.postMessage(cmd.position(fen));
     this.setStatus('thinking');

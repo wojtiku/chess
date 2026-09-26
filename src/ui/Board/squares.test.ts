@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { Square } from 'chess.js';
+// `Chess` is imported from `chess/rules`, not from `chess.js`: the project has an
+// explicit rule that the library is reached through that boundary, and this file
+// was the one place a *type* import went past it.
 import { Chess } from '../../chess/rules';
 import { FILES, RANKS, displaySquares, squareColor, stepSquare, type ArrowKey } from './squares';
 
@@ -50,11 +52,20 @@ describe('squareColor', () => {
   // position itself comes from and it follows the standard convention.
   it('agrees with the rules library on every square', () => {
     const game = new Chess();
+    // The library's narrow `Square` union, **derived from the class rather than
+    // imported**. `chess/rules` re-exports this project's own `Square`, which is a
+    // plain `string` — too wide for `game.squareColor`, and the reason this file
+    // used to `import type { Square } from 'chess.js'` and so reached past the
+    // boundary. `Parameters<…>[0]` takes the narrow type from the value that came
+    // through the boundary, which is the same information without the crossing.
+    type LibrarySquare = Parameters<Chess['squareColor']>[0];
     for (const square of ALL_SQUARES) {
       // The cast is the same narrowing the rules layer does at the library boundary:
       // chess.js types a square as a 64-value union, and `ALL_SQUARES` is built from
       // the same file and rank lists, so every one of these is a real square.
-      expect(squareColor(square), square).toBe(game.squareColor(square as Square));
+      expect(squareColor(square), square).toBe(
+        game.squareColor(square as LibrarySquare),
+      );
     }
   });
 

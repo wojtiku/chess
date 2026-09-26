@@ -1,0 +1,72 @@
+# Acceptance criterion 13 says the production-build engine gate is "verified in
+# CI". The gate was sound and runnable — `npm run e2e` builds the app, serves
+# `dist/` with `vite preview`, and drives it with the real Stockfish WASM — but
+# nothing ran it, so the criterion was aspirational. This workflow makes it true
+# the moment there is a remote.
+#
+# The order is the point and is not alphabetical. `npm run build` and the Playwright
+# `webServer` chain both invoke `prebuild` → `copy-engine`, so the engine is present
+# for every later step; and `npx tsc -b` runs inside `npm run build`, so a type error
+# fails the job before the slow E2E phase rather than after it.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# A superseded run on the same ref tells you nothing, and cancelling it frees the
+# runner for the commit that is actually being judged.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # A literal version, and deliberately **not** `node-version-file: .nvmrc`
+          # — there is no `.nvmrc` in this repository, and that line fails the job at
+          # setup with a missing-file error before a single test runs. The value is
+          # the major that satisfies `package.json`'s own `engines.node: ">=24"`, so
+          # the two agree without the workflow depending on a file that does not
+          # exist. If that floor is ever raised, this line is the one to raise.
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Unit, integration and component tests
+        run: npm test
+
+      - name: Typecheck
+        run: npx tsc -b
+
+      - name: Production build
+        run: npm run build
+
+      # `PERFT_FULL=1` — the exhaustive node counts. Runs in well under the job
+      # budget on CI hardware, and it is the guard against a `chess.js` upgrade that
+      # silently changes move generation.
+      - name: Perft against published node counts
+        run: npm run perft:full
+
+      - name: Install the browser Playwright drives
+        # `--with-deps` installs the system libraries Chromium needs on a bare
+        # runner. Without it the E2E phase fails at launch with a missing .so, which
+        # reads as an app failure and is not one.
+        run: npx playwright install --with-deps chromium
+
+      # The real gate: a production build, served by `vite preview`, driving the real
+      # WASM engine. `webServer` runs `npm run build` itself and binds 4173 with
+      # `--strictPort`, so a stale server fails loudly here rather than binding
+      # elsewhere and letting the suite test nothing.
+      - name: End-to-end against a production build
+        run: npm run e2e

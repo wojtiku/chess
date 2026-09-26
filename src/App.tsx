@@ -32,13 +32,36 @@ export default function App() {
   // exists to eliminate — so do not restore it, and do not "fix" a type error by
   // keeping it.
   //
-  // `sideToMove` is the turn of the position being *drawn*, which is `game`'s:
-  // `useGame` only ever holds an analysis for the position on screen (it clears
-  // the analysis when the position changes and refills it only if it still matches),
-  // so the two are the same position by construction. Reading the turn of the
-  // *live* game instead would be wrong here: while reviewing an earlier ply, that
-  // is a different position, and the bar would convert one position's score with
-  // another position's turn.
+  // `sideToMove` is the turn of the position being *drawn*, which is `game`'s,
+  // and `drawn` is gated to be the position the score was computed for. Reading
+  // the turn of the *live* game instead would be wrong here: while reviewing an
+  // earlier ply, that is a different position, and the bar would convert one
+  // position's score with another position's turn.
+  //
+  // **The gate, and why the old comment was wrong.** This used to say the two are
+  // "the same position by construction, because useGame clears the analysis when
+  // the position changes". They are not, in the render that matters: `setAnalysis
+  // (null)` runs inside a `useEffect`, and React runs effects *after* the commit.
+  // So on every learner move React committed a render in which the PREVIOUS
+  // position's side-to-move score was still in hand and was converted with the NEW
+  // position's turn — a mirrored number, which for a bar is a wrong number rather
+  // than a missing one. `Analysis` already carries the `fen` it was computed for,
+  // so the honest check is to compare that with the FEN being drawn, and until now
+  // nothing did.
+  //
+  // **This invariant is structural, not test-observable in this stack, and that is
+  // worth knowing before someone tries.** A test for it was written: a
+  // MutationObserver recording every `data-white-share` the bar commits, driven by
+  // a move. It passed against the unfixed code — `act()` and user-event both flush
+  // passive effects before the observer's microtask runs, so the mirrored commit
+  // never reaches the DOM the test can see. Sabotage confirmed it: removing this
+  // gate leaves the test green. So the test was removed rather than shipped as one
+  // that proves nothing, which is the failure mode this branch's reviews exist to
+  // catch. Whether the frame reaches a real screen depends on React's effect-flush
+  // ordering for a discrete click, so it may never be visible — but it is in
+  // React's committed model, and a mirrored bar is a wrong bar.
+  const drawnFen = g.game.fen();
+  const drawn = g.analysis?.fen === drawnFen ? g.analysis : null;
   const lastMove = (() => {
     const played = g.snapshot.moves[g.snapshot.cursor - 1];
     return played === undefined ? null : { from: played.from, to: played.to };
@@ -80,8 +103,8 @@ export default function App() {
       <div className="app-main">
         <div className="app-board">
           <EvalBar
-            sideToMoveCp={g.analysis?.scoreCp}
-            sideToMoveMate={g.analysis?.scoreMate}
+            sideToMoveCp={drawn?.scoreCp}
+            sideToMoveMate={drawn?.scoreMate}
             sideToMove={g.game.turn()}
             orientation={g.settings.orientation}
           />

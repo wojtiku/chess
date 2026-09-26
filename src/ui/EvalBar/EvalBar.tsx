@@ -23,7 +23,17 @@ export interface EngineScore {
 export interface EvalBarProps extends EngineScore {
   /** Whose turn it was in the analysed position. Required, on purpose: this is the
    *  one fact that decides which way the bar points, so a caller cannot render a
-   *  bar without committing to it. */
+   *  bar without committing to it.
+   *
+   *  The prop makes the *conversion* impossible to get wrong. It does not make it
+   *  impossible to pass the wrong turn: a caller holding a score for one position
+   *  and a `sideToMove` from another will get a confidently mirrored number out of
+   *  this component, with no error. That happened — the final review found that
+   *  every learner move committed a render in which the previous position's score
+   *  was converted with the new position's turn, because the effect that clears the
+   *  analysis runs after the commit. `App` now gates on the `fen` the `Analysis`
+   *  carries; this comment exists so the next reader knows the responsibility is
+   *  shared and that the required prop is not, by itself, the guarantee. */
   sideToMove: Side;
   /** Which way round the board is drawn, `'w'` or `'b'`. Moves the fills around the
    *  track; it never changes what `data-white-share` means. */

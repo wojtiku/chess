@@ -16,7 +16,7 @@
 //    that side is mated in |N|. `pickHint` puts the two on one scale before
 //    comparing them; `classify` keeps them apart and decides mate cases first.
 
-import { EngineError, RETRYABLE_ENGINE_CODES } from '../engine/engineClient';
+import { ADVICE_SKILL_LEVEL, EngineError, RETRYABLE_ENGINE_CODES } from '../engine/engineClient';
 import type { PvLine, SearchResult } from '../engine/engineClient';
 import { AnalysisCache } from './cache';
 
@@ -48,7 +48,10 @@ export interface Analysis {
  * `newGame` and no status polling. Anything more would couple the analysis
  * layer to the worker's lifecycle for no behaviour. */
 export interface EngineLike {
-  search(fen: string, opts: { movetimeMs: number; multiPv?: number }): Promise<SearchResult>;
+  search(
+    fen: string,
+    opts: { movetimeMs: number; multiPv?: number; skillLevel?: number },
+  ): Promise<SearchResult>;
 }
 
 export const DEFAULT_MULTI_PV = 5;
@@ -83,8 +86,25 @@ export interface EngineSourceOptions {
   cache?: AnalysisCache;
 }
 
+export interface AnalysisOptions {
+  multiPv?: number;
+  movetimeMs?: number;
+  /**
+   * The `Skill Level` to search at. **Every analysis runs at full strength**, and
+   * the default says so rather than leaving it to the caller's memory.
+   *
+   * The option exists only so the level is part of the *question* — and therefore
+   * part of the cache key below. A cached evaluation computed by a handicapped
+   * net is not a slightly stale answer, it is a wrong one, and the eval bar would
+   * show it with no way to tell it from a fresh one. Omit it and you get
+   * `ADVICE_SKILL_LEVEL`; pass something else only if you are deliberately asking
+   * a weaker question, and then you get a separate cache entry for it.
+   */
+  skillLevel?: number;
+}
+
 export interface EngineSource {
-  analyze(fen: string, opts?: { multiPv?: number; movetimeMs?: number }): Promise<Analysis>;
+  analyze(fen: string, opts?: AnalysisOptions): Promise<Analysis>;
 }
 
 export function makeEngineSource(client: EngineLike, options: EngineSourceOptions = {}): EngineSource {
@@ -101,18 +121,25 @@ export function makeEngineSource(client: EngineLike, options: EngineSourceOption
    * an error for a question that was perfectly answerable. */
   const inFlight = new Map<string, { key: string; promise: Promise<Analysis> }>();
 
-  const cacheKey = (fen: string, multiPv: number, movetimeMs: number): string =>
+  const cacheKey = (fen: string, multiPv: number, movetimeMs: number, skillLevel: number): string =>
     // The options are part of the key, not an afterthought: a 1-line eval-bar
     // search and a 5-line hint search are two different questions about the same
     // position, and answering one from the other's cache would quietly strip
-    // `good` hint mode of every alternative.
-    `${multiPv}/${movetimeMs} ${fen}`;
+    // `good` hint mode of every alternative. The skill level is in the key for
+    // the stronger version of that reason — two searches at different levels are
+    // not two answers to one question, they are answers to different questions,
+    // and a handicapped net's score is a wrong score rather than a stale one.
+    `${multiPv}/${movetimeMs}/${skillLevel} ${fen}`;
 
   return {
     async analyze(fen, opts = {}) {
       const multiPv = opts.multiPv ?? DEFAULT_MULTI_PV;
       const movetimeMs = opts.movetimeMs ?? DEFAULT_ANALYSIS_MOVETIME_MS;
-      const key = cacheKey(fen, multiPv, movetimeMs);
+      // Resolved here rather than left to `EngineClient.search`'s own default, so
+      // that the level in the cache key and the level searched are the same
+      // expression and cannot drift apart.
+      const skillLevel = opts.skillLevel ?? ADVICE_SKILL_LEVEL;
+      const key = cacheKey(fen, multiPv, movetimeMs, skillLevel);
 
       // Before the in-flight check: a finished search is strictly better than a
       // new one, and the cache read is what makes `get` refresh recency.
@@ -123,7 +150,8 @@ export function makeEngineSource(client: EngineLike, options: EngineSourceOption
       // takes: the write happens on the single success path below, so a retry can
       // neither charge the cache twice nor store a failure.
       const attempt = async (): Promise<Analysis> => {
-        const search = (): Promise<SearchResult> => client.search(fen, { movetimeMs, multiPv });
+        const search = (): Promise<SearchResult> =>
+          client.search(fen, { movetimeMs, multiPv, skillLevel });
         let result: SearchResult;
         try {
           result = await search();

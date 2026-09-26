@@ -52,17 +52,41 @@ describe('makeEngineSource', () => {
     expect(a.lines).toHaveLength(1);
   });
 
-  it('defaults to 5 lines and a 3s budget', async () => {
+  it('defaults to 5 lines, a 3s budget, and full strength', async () => {
     // The brief writes this as `{ multiPv?: number; movetimeMs: number } = {}`,
     // which does not typecheck under `strict`: `{}` has no `movetimeMs`. The
     // spy record is what the assertion below is about, so the honest annotation
-    // makes both fields optional — `toEqual` still pins both values.
-    let seen: { multiPv?: number; movetimeMs?: number } = {};
+    // makes all three fields optional — `toEqual` still pins all three values.
+    let seen: { multiPv?: number; movetimeMs?: number; skillLevel?: number } = {};
     const src = makeEngineSource({
       search: async (_f, o) => { seen = o; return SEARCH({}); },
     });
     await src.analyze('fen');
-    expect(seen).toEqual({ multiPv: 5, movetimeMs: 3000 });
+    // `skillLevel: 20` is the review's Critical, asserted at the layer that owns
+    // the analysis cache. Every analysis is advice, so the default is full
+    // strength, and a test that only checked multiPv and movetimeMs would have
+    // passed while the eval bar showed a handicapped score.
+    expect(seen).toEqual({ multiPv: 5, movetimeMs: 3000, skillLevel: 20 });
+  });
+
+  it('honours an explicit skill level, and caches it separately', async () => {
+    // The cache key carries the level, so an analysis at one level can never be
+    // served to a caller who asked at another. A handicapped score is a *wrong*
+    // score, not a stale one, and the bar would show it with no way to tell.
+    const seen: number[] = [];
+    const src = makeEngineSource({
+      search: async (_f, o) => { seen.push(o.skillLevel ?? 0); return SEARCH({}); },
+    });
+    await src.analyze('fen-lvl');
+    await src.analyze('fen-lvl', { skillLevel: 1 });
+    await src.analyze('fen-lvl');
+
+    // Two searches, not three: the level-1 request got its own entry rather than
+    // the level-20 answer, and the third call — level 20 again — was served from
+    // the first call's cache. A key without the level would give `[20]` here and
+    // hand a learner the advice engine's number in response to a different
+    // question.
+    expect(seen).toEqual([20, 1]);
   });
 
   it('serves a cached FEN without touching the engine', async () => {
@@ -135,12 +159,14 @@ describe('makeEngineSource', () => {
   });
 
   it("passes the caller's options through", async () => {
-    let seen: { multiPv?: number; movetimeMs?: number } = {};
+    let seen: { multiPv?: number; movetimeMs?: number; skillLevel?: number } = {};
     const src = makeEngineSource({
       search: async (_f, o) => { seen = o; return SEARCH({}); },
     });
     await src.analyze('fen-d', { multiPv: 1, movetimeMs: 800 });
-    expect(seen).toEqual({ multiPv: 1, movetimeMs: 800 });
+    // The level is the analysis layer's own default rather than something the
+    // caller has to remember, so it is present even though this caller passed none.
+    expect(seen).toEqual({ multiPv: 1, movetimeMs: 800, skillLevel: 20 });
   });
 
   it("takes the depth from the search result, not from the first line", async () => {

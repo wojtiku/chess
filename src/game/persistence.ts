@@ -332,13 +332,24 @@ export function loadGame(): StoredGame | null {
 
 /** Stores a move list, and the resignation if the game ended in one.
  *
- * Validation belongs on the read path, not here: the only writer is the
- * reducer, whose moves are legal by construction and whose `resignedBy` comes
- * from the side to move. `resignedBy: undefined` is dropped by `JSON.stringify`,
- * so an unresigned game is written exactly as it was before this parameter
- * existed.
+ * **`resignedBy` is required, and that is the point of the signature.** It was
+ * optional, so an unamended one-argument call site compiled clean and silently
+ * restored Task 6's Critical: a resignation sets the status without touching
+ * `moves`, so a stored game with no `resignedBy` reopens as playable, the banner
+ * is gone, and the opponent-reply effect goes on playing a game the learner has
+ * already given up. The plan fixed the one call site; nothing stopped the next
+ * one. Requiring the argument turns that regression into a type error, which is
+ * this project's stated standard — "structural, not test-enforced" — and the
+ * optional parameter was the odd one out.
+ *
+ * **The wire format is unchanged.** The caller passes `undefined` for an
+ * unresigned game, `JSON.stringify` drops the property, and the stored bytes are
+ * what they always were. The signature is strict about the argument; the file on
+ * disk knows nothing about it. Validation of either value belongs on the read
+ * path: the only writer is the reducer, whose moves are legal by construction and
+ * whose `resignedBy` comes from the side to move.
  */
-export function saveGame(moves: readonly StoredMove[], resignedBy?: Side): void {
+export function saveGame(moves: readonly StoredMove[], resignedBy: Side | undefined): void {
   safeSet(GAME_KEY, JSON.stringify({ moves, resignedBy }));
 }
 

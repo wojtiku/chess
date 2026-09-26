@@ -29,10 +29,14 @@ export function materialDiff(game: Chess): number {
   for (const row of game.board()) {
     for (const cell of row) {
       if (cell === null) continue;
-      // chess.js's `type` is its own `PieceSymbol`; narrowed by membership in this
-      // module's own table rather than asserted, so a sixth letter is a runtime
-      // miss that contributes nothing instead of a cast that lies.
-      if (!(cell.type in VALUE)) continue;
+      // chess.js's `type` is its own `PieceSymbol`; narrowed by an OWN-key check
+      // against this module's table rather than asserted, so a sixth letter is a
+      // runtime miss that contributes nothing instead of a cast that lies.
+      // `Object.hasOwn` and not `in`, which walks the prototype chain and would
+      // report `toString` as a piece — same correction as `Board/pieces.ts`, and
+      // for the same reason: `in` is not the membership test the old comment called
+      // it.
+      if (!Object.hasOwn(VALUE, cell.type)) continue;
       const value = VALUE[cell.type as PieceType] ?? 0;
       diff += cell.color === 'w' ? value : -value;
     }
@@ -82,8 +86,9 @@ export function capturedBy(game: Chess): CapturedBy {
     // be pushed into a `PieceType[]` and then silently dropped by every lookup
     // below — a type error that renders as a missing piece. Filtered at the source.
     // `move.color` and `captured` are already `'w' | 'b'` and this module's
-    // `PieceType`, so neither needs a cast.
-    if (!(captured in VALUE)) continue;
+    // `PieceType`, so neither needs a cast. `Object.hasOwn` rather than `in`, as
+    // above: the prototype chain is not a set of pieces.
+    if (!Object.hasOwn(VALUE, captured)) continue;
     taken[move.color].push(captured);
   }
   return taken;

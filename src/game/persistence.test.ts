@@ -281,7 +281,7 @@ describe('persistence', () => {
   });
 
   it('round-trips a move list', () => {
-    saveGame([{ from: 'e2', to: 'e4' }, { from: 'e7', to: 'e5', promotion: undefined }]);
+    saveGame([{ from: 'e2', to: 'e4' }, { from: 'e7', to: 'e5', promotion: undefined }], undefined);
     expect(loadGame()?.moves).toHaveLength(2);
   });
 
@@ -301,7 +301,7 @@ describe('persistence', () => {
     // `loadSettings()` still returned `DEFAULT_SETTINGS` — which is also what
     // a `clearGame` that wiped both keys would return, so it could not fail.
     saveSettings({ ...DEFAULT_SETTINGS, skillLevel: 20, theme: 'dark', hintMode: 'good' });
-    saveGame([{ from: 'e2', to: 'e4' }]);
+    saveGame([{ from: 'e2', to: 'e4' }], undefined);
     clearGame();
     expect(loadGame()).toBeNull();
     expect(localStorage.getItem(SETTINGS_KEY)).not.toBeNull();
@@ -318,7 +318,7 @@ describe('persistence', () => {
     expect(() => localStorage.setItem('probe', 'x')).toThrow(/QuotaExceeded/);
     expect(spy).toHaveBeenCalled();
     expect(() => saveSettings(DEFAULT_SETTINGS)).not.toThrow();
-    expect(() => saveGame([{ from: 'e2', to: 'e4' }])).not.toThrow();
+    expect(() => saveGame([{ from: 'e2', to: 'e4' }], undefined)).not.toThrow();
     // And the write really was refused, so the guards are what saved this.
     expect(localStorage.getItem(SETTINGS_KEY)).toBeNull();
     expect(localStorage.getItem(GAME_KEY)).toBeNull();
@@ -368,6 +368,47 @@ describe('settings: shape of what comes out', () => {
     const b = loadSettings();
     expect(a).toEqual(b);
     expect(a).not.toBe(b);
+  });
+});
+
+describe('saveGame: the resignation argument is required, and that is the point', () => {
+  // The review's I2. `resignedBy` was optional, so an unamended one-argument call
+  // site compiled clean and silently restored Task 6's Critical: a resignation sets
+  // the status without touching `moves`, so a stored game with no `resignedBy`
+  // reopens as playable, the banner is gone, and the opponent keeps playing a game
+  // the learner has given up.
+  //
+  // **This is asserted by `tsc`, not by a runtime expectation**, and that is the
+  // only way it can be: a runtime test cannot tell a required parameter from an
+  // optional one, and a test that merely called `saveGame(moves, undefined)` would
+  // pass with the parameter optional — which is the exact shape that hides the
+  // regression. `@ts-expect-error` fails the build if the error ever stops
+  // happening, so it is a real gate rather than a comment.
+
+  it('refuses a one-argument call at compile time', () => {
+    // @ts-expect-error `resignedBy` is required. Omitting it is how a resignation
+    // gets dropped from storage, which reopens a resigned game as playable.
+    saveGame([]);
+    expect(true).toBe(true);
+  });
+
+  it('accepts an explicit undefined, and writes no resignedBy', () => {
+    // The escape hatch is the *value*, not the arity: an unresigned game passes
+    // `undefined` deliberately, and `JSON.stringify` drops the property so the
+    // stored bytes are unchanged from before the parameter was made required.
+    saveGame([{ from: 'e2', to: 'e4' }], undefined);
+
+    expect(localStorage.getItem(GAME_KEY)).toBe('{"moves":[{"from":"e2","to":"e4"}]}');
+    expect(loadGame()).toEqual({ moves: [{ from: 'e2', to: 'e4' }] });
+  });
+
+  it('round-trips a resignation through the required argument', () => {
+    // The behaviour the signature protects, asserted so the requirement is not
+    // satisfied by simply refusing to write the field at all.
+    saveGame([{ from: 'e2', to: 'e4' }, { from: 'e7', to: 'e5' }], 'w');
+
+    expect(loadGame()?.resignedBy).toBe('w');
+    expect(localStorage.getItem(GAME_KEY)).toContain('"resignedBy":"w"');
   });
 });
 
@@ -492,7 +533,7 @@ describe('game: what is written', () => {
     // The reason a move list is stored at all: a bare FEN carries no history,
     // so the position below cannot be told apart from any other repetition of
     // it, and the threefold counter is lost on the next move.
-    saveGame(fromUci('g1f3', 'g8f6', 'f3g1', 'f6g8', 'g1f3', 'g8f6', 'f3g1', 'f6g8'));
+    saveGame(fromUci('g1f3', 'g8f6', 'f3g1', 'f6g8', 'g1f3', 'g8f6', 'f3g1', 'f6g8'), undefined);
     const raw = localStorage.getItem(GAME_KEY);
     expect(raw).not.toContain('rnbqkbnr');
     expect(raw).toBe(
@@ -510,13 +551,13 @@ describe('game: what is written', () => {
     // value; a `?? null` anywhere in the write path would store `null`, which
     // is not a valid promotion and would make `loadGame` discard the learner's
     // entire game on the next reload.
-    saveGame([{ from: 'e2', to: 'e4', promotion: undefined }]);
+    saveGame([{ from: 'e2', to: 'e4', promotion: undefined }], undefined);
     expect(localStorage.getItem(GAME_KEY)).toBe('{"moves":[{"from":"e2","to":"e4"}]}');
     expect(loadGame()?.moves).toHaveLength(1);
   });
 
   it('keeps a real promotion', () => {
-    saveGame(fromUci('a2a4', 'b7b5', 'a4b5', 'h7h6', 'b5b6', 'h6h5', 'b6b7', 'h5h4', 'b7c8q'));
+    saveGame(fromUci('a2a4', 'b7b5', 'a4b5', 'h7h6', 'b5b6', 'h6h5', 'b6b7', 'h5h4', 'b7c8q'), undefined);
     expect(loadGame()?.moves.at(-1)).toEqual({ from: 'b7', to: 'c8', promotion: 'q' });
     expect(hydrate(loadGame()).moves.at(-1)?.san).toBe('bxc8=Q');
   });
@@ -526,14 +567,14 @@ describe('game: what is written', () => {
     // the reader checks by hand. All four, or one of the four is untested.
     const line = ['a2a4', 'b7b5', 'a4b5', 'h7h6', 'b5b6', 'h6h5', 'b6b7', 'h5h4'];
     for (const piece of ['q', 'r', 'b', 'n'] as const) {
-      saveGame(fromUci(...line, `b7c8${piece}`));
+      saveGame(fromUci(...line, `b7c8${piece}`), undefined);
       expect(loadGame()?.moves.at(-1)?.promotion).toBe(piece);
       expect(hydrate(loadGame()).moves.at(-1)?.san).toBe(`bxc8=${piece.toUpperCase()}`);
     }
   });
 
   it('hands out a fresh array, so a caller cannot write through to storage', () => {
-    saveGame(fromUci('e2e4'));
+    saveGame(fromUci('e2e4'), undefined);
     const first = loadGame();
     expect(first).not.toBeNull();
     expect(first).not.toBe(loadGame());
@@ -543,13 +584,13 @@ describe('game: what is written', () => {
 
   it('does not hold on to the caller\'s array', () => {
     const moves = fromUci('e2e4');
-    saveGame(moves);
+    saveGame(moves, undefined);
     moves.push({ from: 'e7', to: 'e5' });
     expect(loadGame()?.moves).toHaveLength(1);
   });
 
   it('writes an empty list as an empty list', () => {
-    saveGame([]);
+    saveGame([], undefined);
     expect(loadGame()?.moves).toEqual([]);
     // Task 10 calls `clearGame()` instead when there are no moves, so this is
     // belt and braces; the contract is that it is not the same as "nothing
@@ -560,12 +601,12 @@ describe('game: what is written', () => {
 
 describe('game: every move type survives the round trip', () => {
   it('castling', () => {
-    saveGame(fromUci('e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'f8c5', 'e1g1'));
+    saveGame(fromUci('e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'f8c5', 'e1g1'), undefined);
     expect(hydrate(loadGame()).moves.at(-1)?.san).toBe('O-O');
   });
 
   it('en passant', () => {
-    saveGame(fromUci('e2e4', 'd7d5', 'e4d5'));
+    saveGame(fromUci('e2e4', 'd7d5', 'e4d5'), undefined);
     expect(hydrate(loadGame()).moves.at(-1)?.san).toBe('exd5');
   });
 
@@ -575,7 +616,7 @@ describe('game: every move type survives the round trip', () => {
     // `keeps a real promotion` and `keeps all four promotable pieces`; this is
     // the rejected half, and it is rejected as an unplayable move rather than
     // as a wrong-typed field, because `promotion` is simply absent.
-    saveGame(fromUci('a2a4', 'b7b5', 'a4b5', 'h7h6', 'b5b6', 'h6h5', 'b6b7', 'h5h4', 'b7c8'));
+    saveGame(fromUci('a2a4', 'b7b5', 'a4b5', 'h7h6', 'b5b6', 'h6h5', 'b6b7', 'h5h4', 'b7c8'), undefined);
     expect(loadGame()).toBeNull();
   });
 });
@@ -886,7 +927,7 @@ describe('game: a resignation survives the reload', () => {
   it('leaves the payload of an unresigned game exactly as it was', () => {
     // `resignedBy: undefined` must not appear in storage, so the wire format
     // for every game written before this field existed is unchanged.
-    saveGame(fromUci('e2e4'));
+    saveGame(fromUci('e2e4'), undefined);
     expect(localStorage.getItem(GAME_KEY)).toBe('{"moves":[{"from":"e2","to":"e4"}]}');
     expect(loadGame()).toEqual({ moves: fromUci('e2e4') });
     // `toEqual`, not `toMatchObject`: a `resignedBy: undefined` key riding along
@@ -947,7 +988,7 @@ describe('when storage itself is unavailable', () => {
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
     expect(loadGame()).toBeNull();
     expect(() => saveSettings(DEFAULT_SETTINGS)).not.toThrow();
-    expect(() => saveGame(fromUci('e2e4'))).not.toThrow();
+    expect(() => saveGame(fromUci('e2e4'), undefined)).not.toThrow();
     expect(() => clearGame()).not.toThrow();
   });
 

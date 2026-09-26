@@ -333,8 +333,18 @@ export function useGame(): GameApi {
    * screen. The engine's score is for the side to move *in the position it
    * searched*, so an evaluation of the previous position shown against the new
    * position's turn is a bar pointing the wrong way — which is precisely the
-   * failure the eval bar's required `sideToMove` prop exists to make impossible,
-   * and only a caller that refuses to show a stale number can keep it that way.
+   * failure the eval bar's required `sideToMove` prop exists to make impossible.
+   *
+   * **This clearing is necessary and is NOT sufficient, and it is the caller that
+   * finishes the job.** `setAnalysis(null)` runs here, inside an effect, and React
+   * runs effects *after* the commit — so there is always a committed render between
+   * a move and this effect in which the previous position's score is still in
+   * state. For one render the bar would show a mirrored number, which is a *wrong*
+   * number rather than a missing one. `App` therefore gates on the `fen` the
+   * `Analysis` carries, and that gate — not this clearing — is what makes the
+   * invariant true. The three comments here and in `App` used to claim the
+   * clearing made it true on its own; the final review found that claim false, and
+   * the claim was in miniature the same self-referential pattern it was criticising.
    *
    * It also yields: while the engine owes a move for this position, the reply
    * effect's search is the one that matters, and a second search for the same

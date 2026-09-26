@@ -24,6 +24,11 @@ npx playwright install chromium
 npm run e2e           # end-to-end against a real production build
 ```
 
+All five run in CI on every push and pull request (`.github/workflows/ci.yml`),
+including the production-build engine gate, which is the one that matters: the
+engine is a build artefact copied out of `node_modules`, so only a CI run proves
+the WASM resolves from inside a worker in a real build.
+
 `npm run e2e` builds the app, serves `dist/` with `vite preview`, and drives it
 with a **real** Stockfish worker. That is the point of it: WASM resolution from
 inside a worker is the single thing most likely to work in development and break
@@ -41,8 +46,28 @@ in a build, and nothing in jsdom can see it.
   is posted while one is running, and a `stop` immediately followed by a `go`
   kills it too — both measured against the real engine, and both invisible to a
   fake worker. The queue in `src/engine/searchQueue.ts` is what prevents them.
+- **The opponent is handicapped; the advice is not.** Stockfish's `Skill Level`
+  weakens the *evaluation* during a search, not only its move choice, so a
+  handicapped engine is a bad teacher. The opponent replies at whatever strength
+  you pick, and the evaluation bar and every hint are computed at full strength
+  regardless. This is stated on every search rather than left to the engine's
+  sticky `setoption`, and `src/test/e2e/game.spec.ts` asserts it against the real
+  engine at both ends of the difficulty range.
 - If the engine fails to load, engine features disable and the board keeps
   working as a local two-player game: Black's turn becomes a human's turn.
+
+## A note on the draw rules
+
+Under FIDE rules, threefold repetition and the fifty-move rule are **claims, not
+automatic endings**: a player who wants to claim must notify the arbiter, and the
+game only ends when the arbiter agrees. This app declares both draws the moment
+they happen, without asking, because that is what the design spec (§6.9) requires
+and because a practice board that waits to be told it is drawn is not much of a
+practice board. So it will occasionally end a game that a tournament would let
+you continue — and a learner who goes on to play under FIDE rules should know
+that the difference is real. Nothing else about the endings is informal:
+checkmate and stalemate are automatic, and so is a draw by insufficient
+material.
 
 ## Accessibility
 

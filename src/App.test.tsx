@@ -724,6 +724,80 @@ describe('App', () => {
     expect(skillOptions().at(0)).toBe(`${SKILL_OPTION}1`);
   });
 
+  /**
+   * The review's CRITICAL, pinned at the door.
+   *
+   * UCI `setoption` is sticky, so a `Skill Level` sent for the opponent's move
+   * used to stay in force for every evaluation and every hint. Stockfish's
+   * `Skill Level` does not merely pick worse moves — below 20 it substitutes a
+   * reduced-accuracy evaluation net from root depth 4 down — so the *score* was
+   * handicapped too. Measured against the real engine in a position eight pawns
+   * up: at Skill 1 the bar read `0.0` and the hint said `e4`; at Skill 20, `+8.8`
+   * and `Bb2`.
+   *
+   * This asserts the exact bytes on the wire, which is the part a fake *can* see.
+   * It cannot see that Stockfish's handicap is real, which is why the real-engine
+   * E2E test exists too and why that one is the one that must never be deleted.
+   */
+  it('handicaps the opponent and never the advice', async () => {
+    const user = userEvent.setup();
+    storeSettings({ skillLevel: 1, minThinkTimeMs: 0 });
+    render(<App />);
+
+    // The opening evaluation: the learner's own strength must not reach it. Two
+    // lines and the order is the contract — 1 from the `newGame` that boots the
+    // client (the play level) and 20 from the search itself.
+    await waitFor(() => expect(FakeWorker.searches).toBe(1));
+    expect(skillOptions()).toEqual([`${SKILL_OPTION}1`, `${SKILL_OPTION}20`]);
+
+    // A hint, which must not be handed the opponent's handicap. Asserted as "no
+    // play-level option was posted" rather than as a search count: the hint for
+    // the position on screen *joins* the evaluation already in flight (the
+    // in-flight map is keyed on FEN alone, deliberately), so a new `go` here
+    // would be a different behaviour and not this test's subject.
+    FakeWorker.sent.length = 0;
+    await user.click(screen.getByRole('button', { name: 'Hint' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Play hint move' })).toBeInTheDocument());
+    expect(skillOptions(), 'a hint must never be searched at the play level').toEqual([]);
+
+    // **And the reply is handicapped.** This is the half that must not be "fixed"
+    // along with the other half: a door that sent 20 here would give the learner a
+    // full-strength opponent, trading the advice bug for a worse one — the
+    // difficulty control would stop doing the only thing it exists to do.
+    //
+    // The engine is at 20 after the evaluation, so the reply has to state 1 — and
+    // it does, which is the assertion. (It is not the *last* line: the evaluation
+    // of the position the reply created then posts 20 again, and that alternation
+    // is the next test.)
+    await play(user, 'e2', 'e4');
+    await waitFor(() => expect(moves()).toHaveLength(2));
+    expect(skillOptions(), 'the opponent must play at the chosen strength').toContain(
+      `${SKILL_OPTION}1`,
+    );
+  });
+
+  it('re-states the play level after a hint, and still not for the next evaluation', async () => {
+    // The two levels alternate on the wire as the learner moves and the app
+    // evaluates: the reply at the play level, the evaluation at 20, the reply at
+    // the play level again. A door that leaked the last level into the next search
+    // would show up here as a missing or a repeated value.
+    const user = userEvent.setup();
+    storeSettings({ skillLevel: 1, minThinkTimeMs: 0 });
+    render(<App />);
+    await waitFor(() => expect(FakeWorker.searches).toBe(1));
+
+    await play(user, 'e2', 'e4');
+    await waitFor(() => expect(moves()).toHaveLength(2));
+    await waitFor(() => expect(evalShare()).not.toBe('50'));
+
+    // Reply (1), then the evaluation of the new position (20). Two searches, two
+    // different levels, and the second is the advice channel.
+    await waitFor(() => expect(FakeWorker.sent).toContain(`${SKILL_OPTION}20`));
+    const levels = skillOptions();
+    expect(levels.at(-1)).toBe(`${SKILL_OPTION}20`);
+    expect(levels).toContain(`${SKILL_OPTION}1`);
+  });
+
   // The theme is one field of the settings object, and it is the only preference
   // with no control of its own in the difficulty panel — so the header's switch is
   // the whole feature, and nothing else tests it.

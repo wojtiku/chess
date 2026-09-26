@@ -81,7 +81,7 @@ function findKing(pieces: Map<string, SquarePiece>, color: string): string | nul
 /** The square a drop landed on, or null if it did not land on one.
  *
  * `e.target` is whatever was under the pointer, which on a square holding a piece
- * is the glyph inside the button, so the search walks up to the nearest square
+ * is the artwork inside the button, so the search walks up to the nearest square
  * rather than reading the target's own dataset. Off the grid there is no square,
  * and a drop with no square is a cancelled drop: returning the first square in
  * render order instead would silently move a piece to a8. */
@@ -89,9 +89,24 @@ function squareUnderPointer(event: DragEvent, board: HTMLElement | null): string
   const target = event.target;
   if (!(target instanceof Element)) return null;
   const square = target.closest('[data-square]');
-  // Scoped to the grid. The promotion popover is a sibling of the grid and carries a
-  // square name of its own for anchoring, so without this a drop onto the popover
-  // would resolve to a board square that the pointer was never over.
+  // Scoped to the grid: the square has to be *inside* the board, not merely
+  // somewhere on the page.
+  //
+  // **The reason this guard was originally given was false, and is corrected here
+  // rather than deleted** — the guard is still worth having, but it was carrying an
+  // invented justification. It used to say the promotion popover "carries a square
+  // name of its own for anchoring", which would make `closest('[data-square]')`
+  // match it. It does not: `PromotionPicker` renders `data-promotion-square`, and
+  // `Board.test.tsx` has always tested a drop onto the popover by its
+  // `role="dialog"`. So `closest` never needed this guard for the popover, and the
+  // ledger flagged this exact comment at Task 8 as a false citation and deferred
+  // it here.
+  //
+  // What the guard is actually for: `closest` walks *up* as well as down, and
+  // nothing stops a `data-square` element from existing outside the grid — an
+  // overlay, a browser extension's injected node. Defence in depth for a case that
+  // does not exist yet, which is worth stating plainly rather than dressing up as a
+  // present-tense requirement.
   if (square === null || board === null || !board.contains(square)) return null;
   return square.getAttribute('data-square');
 }
