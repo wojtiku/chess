@@ -1,8 +1,21 @@
 # Piece artwork
 
-The twelve SVGs in this directory — `wP wN wB wR wQ wK bP bN bB bR bQ bK` — are
-**original work, drawn for this project. There is no third-party licence attached
-to them and no attribution to anyone else is owed or claimed.**
+Ten of the twelve SVGs in this directory — `wP wB wR wQ wK` and their black twins —
+are **original work, drawn for this project. No third-party licence is attached to
+them and no attribution to anyone else is owed or claimed.**
+
+**The two knights are not.** `wN.svg` and `bN.svg` carry an outline **supplied by
+the designer**, converted from an icon to a path with VTracer. Ten pieces here are
+original; two are the designer's, and the file says so rather than letting the
+original-work claim cover all twelve by default.
+
+**That icon's licence has not been confirmed and needs to be.** Most chess icon sets
+are published under CC BY-SA, which would attach real obligations — naming the
+author, stating the licence, giving a source URL, and licensing any derivative of
+the artwork under the same share-alike terms. If the icon was the designer's own, one
+line recording that settles it. If it came from a set, this section has to name that
+set before the project ships, and the share-alike term may be a blocker for shipping
+this under a different licence.
 
 ## Why this file says that
 
@@ -70,16 +83,10 @@ shapes again with no stroke to cover the interior seams, so anything drawn insid
 the first group is painted over. A detail that has to survive the second pass has to
 be a separate mark on top.
 
-Both are there for the same reason, which is size: at 45px the difference between
-"horse" and "lump with a spike on it" is one dot, and the difference between a
-bishop and an egg is one line. Without them the knight and the bishop are the two
-least identifiable pieces in the set at the size the board actually renders them.
-
-The knight was redrawn from scratch after the first version proved unreadable — it
-was a rounded lump with a spike, and read as a cat or a seal at 45px. The version
-that shipped has a muzzle that projects forward with a defined lower lip, a jaw
-line separating the cheek from the throat, and a single ear. The two-ear version it
-replaced was the specific mistake: two pointed ears on a rounded skull is a cat.
+Both are there for the same reason, which is size: at 45px the difference between a
+bishop and an egg is one line. The knight's eye is a detail on an outline that
+already reads; the bishop's slit is the feature that makes that piece identifiable
+at all.
 
 The white and black versions of each piece are the same drawing, lit over the same
 range, painted differently. **What the check does**, precisely: `pieces.test.ts`
