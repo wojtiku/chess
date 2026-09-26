@@ -95,8 +95,31 @@ function openDoor(client: EngineClient): Door {
     analyze: (fen, opts) => queue.enqueue(() => source.analyze(fen, opts), false),
     // `search` rather than `analyze`: the reply needs the `bestmove` line, and
     // `Analysis` deliberately models an evaluation, not a move.
+    //
+    // And the result is deliberately *not* reduced to a bare move string, because a
+    // `stop` does not make the engine fall silent. Measured in Chromium against the
+    // real WASM: a `stop` 200ms into a `go` is answered 23ms later with a **real**
+    // bestmove (`bestmove d2d4 ponder g8f6`), chosen for the question the app has
+    // already abandoned. Handing that back as `string | null` laundered an abandoned
+    // answer into a playable move, and the only thing catching it was the position
+    // check in another file — a cross-file coupling, untested, which is exactly the
+    // kind that gets broken by a well-meaning edit. So an aborted search rejects
+    // here with the same `code: 'aborted'` that `analyze` already throws.
+    //
+    // The two guards are deliberately redundant and neither is redundant *because*
+    // of the other: `useGame` re-checks the position because a position can change
+    // without any search being interrupted (a think-floor wait is not a search), and
+    // the engine layer refuses the interrupted result because the position is not
+    // the only thing that can invalidate an answer. Dropping either leaves a real
+    // hole, so please do not helpfully collapse them into one.
     bestMove: (fen, movetimeMs) =>
-      queue.enqueue(async () => (await client.search(fen, { movetimeMs })).bestMove, true),
+      queue.enqueue(async () => {
+        const result = await client.search(fen, { movetimeMs });
+        if (result.aborted) {
+          throw new EngineError('aborted', 'Search interrupted by a newer request');
+        }
+        return result.bestMove;
+      }, true),
     setSkillLevel: (n) => {
       // Never rejects in practice, and never needs to: a failure here is an
       // option the engine did not take, and the next `ucinewgame` re-sends it.

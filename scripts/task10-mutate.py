@@ -149,9 +149,11 @@ MUTATIONS = [
     ("engine-lets-searches-overlap", ENGINE,
      [("analyze: (fen, opts) => queue.enqueue(() => source.analyze(fen, opts), false),",
        "analyze: (fen, opts) => source.analyze(fen, opts),")]),
-    ("engine-queues-a-move-behind-the-bar", ENGINE,
-     [("enqueue(async () => (await client.search(fen, { movetimeMs })).bestMove, true)",
-       "enqueue(async () => (await client.search(fen, { movetimeMs })).bestMove, false)")]),
+    # The lane itself, in the module that owns it. Pointing this at a call site's
+    # `true`/`false` argument was the previous version, and it went stale in the
+    # round-1 refactor — which is how a mutation quietly stops being run.
+    ("a-move-waits-behind-the-bar", QUEUE_SRC,
+     [("        waiting.unshift(slot);", "        waiting.push(slot);")]),
     # --- persistence -------------------------------------------------------
     ("persistence-wipes-a-resignation", HOOK,
      [("if (snapshot.moves.length === 0 && snapshot.resignedBy === null) {",
@@ -186,6 +188,12 @@ MUTATIONS = [
        "          throw new EngineError('aborted', 'Search interrupted by a newer request');\n"
        "        }",
        "        if (result.aborted) { /* cached like any other empty answer */ }")]),
+    ("the-door-launders-an-aborted-move", ENGINE,
+     [("        if (result.aborted) {\n"
+       "          throw new EngineError('aborted', 'Search interrupted by a newer request');\n"
+       "        }\n"
+       "        return result.bestMove;",
+       "        return result.bestMove;")]),
     ("the-reply-skips-its-position-check", HOOK,
      [("        if (fenRef.current !== askedFor) return;\n", "")]),
 ]

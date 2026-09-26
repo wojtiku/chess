@@ -301,14 +301,27 @@ export function useGame(): GameApi {
         // decision made for a board that is no longer there. The same check the
         // hint and the evaluation both make, and the reason this one is the third
         // rather than the only is that it is the only one that moves a piece.
+        //
+        // Redundant with `useEngine`'s refusal to hand over an aborted search, and
+        // deliberately so: the wait above is not a search, so a move made during it
+        // never interrupts anything and only this check can catch it. If you are
+        // reading this while thinking one of the two is the other's backup — the
+        // engine layer's own comment says the same thing, and both are right.
         if (fenRef.current !== askedFor) return;
         dispatch({ type: 'playUci', uci: best });
       } catch {
-        // The engine owns its own failure state and the badge reports it. An
-        // answer that arrives for a position the learner has left is not this
-        // effect's job to judge: the reducer refuses a move that does not apply,
-        // and a position the learner came back to is one the engine would answer
-        // the same way.
+        // Nothing to do, and that is the whole of it. Two different things arrive
+        // here: a real engine failure, which the client has already turned into its
+        // own `error` state for the badge to report, and an **aborted** search,
+        // which `useEngine` rejects with `code: 'aborted'` because the app asked for
+        // it — a newer move took the engine. Both are the same thing from here: this
+        // run does not have an answer, and the run that superseded it has.
+        //
+        // (This comment used to argue that a stale answer was harmless, on a
+        // reasoning that turned out to be false. It is deliberately not restated
+        // here, because restating it is how it survived as long as it did: the check
+        // above is what stops a move decided for an abandoned position from being
+        // played, and the check exists because that reasoning was wrong.)
       }
     })();
   }, [snapshot, playable, learnerToMove, engineDisabled, engineAvailable, fen, dispatch]);

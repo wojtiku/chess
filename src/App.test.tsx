@@ -20,6 +20,7 @@ import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 import App from './App';
 import { useGame, type GameApi } from './game/useGame';
+import { useEngine } from './engine/useEngine';
 import { Chess } from './chess/rules';
 
 const START_FEN = new Chess().fen();
@@ -66,8 +67,14 @@ class FakeWorker {
   static sent: string[] = [];
   /** How many searches the app has started. */
   static searches = 0;
-  /** How many `stop`s the engine was sent: one per search the app gave up on. */
+  /** How many `stop`s the engine was sent, whether or not anything was running.
+   * An idle `stop` is harmless and the client is allowed to send one. */
   static stops = 0;
+  /** How many searches were actually *abandoned*: a `stop` that arrived with a
+   * search in flight, so the engine answered a question the app had left. Counted
+   * separately from `stops` because the two mean different things, and a test that
+   * conflates them cannot say which happened. */
+  static abandonedSearches = 0;
   /** The most searches ever in flight at the same moment. The real 19-lite WASM
    *  engine *dies* if a second `go` is posted while one is running — measured, not
    *  assumed — so this is the invariant the wiring has to keep, and it is
@@ -143,12 +150,28 @@ class FakeWorker {
     // `ucinewgame`, `setoption` and `quit` are recorded and unanswered.
   }
 
-  /** The `stop` answer: no lines, no score, no move. */
+  /**
+   * The `stop` answer.
+   *
+   * A **real** move, not `(none)`, because that is what the engine does: measured
+   * in Chromium against the real WASM, a `stop` 200ms into a `go` is answered 23ms
+   * later with `bestmove d2d4 ponder g8f6` — a move chosen for the question the app
+   * has just abandoned, with no `info` line at all. Answering `(none)` instead made
+   * every abort test pass for the wrong reason: the reply path returns early on a
+   * null move and never reaches the code that has to survive it, so a fake that
+   * fell silent would have hidden the very bug this exists to pin.
+   *
+   * `pickMove` reads the position the *abandoned* search was given, which is the
+   * point: the move is legal there, so the reducer would accept it, and only the
+   * caller knowing the search was interrupted can tell it is not an answer.
+   */
   private abort(): void {
     if (this.answerTimer === undefined) return;
+    const move = this.pickMove();
     this.cancelAnswer();
     if (this.alive) FakeWorker.inFlightSearches -= 1;
-    this.say('bestmove (none)');
+    FakeWorker.abandonedSearches += 1;
+    this.say(`bestmove ${move}`);
   }
 
   terminate(): void {
@@ -214,6 +237,7 @@ function resetEngine(): void {
   FakeWorker.sent = [];
   FakeWorker.searches = 0;
   FakeWorker.stops = 0;
+  FakeWorker.abandonedSearches = 0;
   FakeWorker.inFlightSearches = 0;
   FakeWorker.maxConcurrentSearches = 0;
   FakeWorker.instances = [];
@@ -1073,14 +1097,14 @@ describe('useGame', () => {
     act(() => result.current.play({ from: 'e2', to: 'e4' }));
 
     // What is in flight at this moment is the *evaluation* of the position the
-    // learner just left, and it is stopped rather than waited out: the whole cost
+    // learner just left, and it is abandoned rather than waited out: the whole cost
     // of a turn-back-and-replay used to be that search plus a second think floor.
-    expect(FakeWorker.stops).toBe(1);
+    expect(FakeWorker.abandonedSearches).toBe(1);
     await waitFor(() => expect(result.current.snapshot.moves).toHaveLength(2), { timeout: 5000 });
     expect(result.current.snapshot.moves.map((m) => m.san)).toEqual(['e4', 'Nc6']);
     // And nothing else was interrupted: the search that answered was the one asked
     // for, and the engine is left running.
-    expect(FakeWorker.stops).toBe(1);
+    expect(FakeWorker.abandonedSearches).toBe(1);
     expect(result.current.engineStatus).not.toBe('error');
   });
 
@@ -1156,6 +1180,81 @@ describe('useGame', () => {
     });
     expect(result.current.hintBusy).toBe(false);
     expect(result.current.hint).not.toBeNull();
+  });
+
+  /**
+   * The engine layer's own refusal, tested where the bug was.
+   *
+   * Asserted through `useEngine` and not through `useGame` on purpose: the position
+   * check in the reply path also stops a stale move being played, so an app-level
+   * test of this would pass whether or not the engine layer refused anything — and
+   * that is precisely how a cross-file coupling goes unnoticed. Here there is no
+   * second guard anywhere in the path.
+   *
+   * And the fake answers a `stop` with a real move, which is what the engine does,
+   * so this fails if the refusal goes away. A fake that answered `(none)` would make
+   * it pass for the wrong reason.
+   */
+  it('an interrupted reply search yields no move, even though the engine gives one', async () => {
+    FakeWorker.searchDelayMs = 400;
+    const { result } = renderHook(() => useEngine());
+    const abandoned = after('e2e4');
+    const wanted = after('d2d4');
+
+    // Two moves in a row: the second interrupts the first, and what the engine
+    // answers for the first is a perfectly good move for the position the app has
+    // already left.
+    const first = result.current.bestMove(abandoned, 1500);
+    const firstSettled = first.then(
+      () => 'settled with a move' as const,
+      (e: unknown) => (e as { code?: string }).code ?? 'rejected',
+    );
+    await waitFor(() => expect(FakeWorker.searches).toBe(1));
+    const second = result.current.bestMove(wanted, 1500);
+    await waitFor(() => expect(FakeWorker.abandonedSearches).toBe(1));
+
+    // The interrupted one is unmistakable: a rejection carrying the abort code, not
+    // a move dressed up as an answer.
+    expect(await firstSettled).toBe('aborted');
+    // And the engine really did answer it — this is the line that would make the
+    // test vacuous if the fake fell silent on a `stop`.
+    expect(FakeWorker.sent).toContain('stop');
+    // The search that is still wanted is unaffected: it runs, and it answers.
+    await expect(second).resolves.toBe('b8c6');
+    expect(FakeWorker.inFlightSearches).toBe(0);
+  });
+
+  it('still answers the position on screen when a reply is interrupted', async () => {
+    // The reachable shape of the same thing, through the app: a move, then Undo and
+    // a different move inside the search window. What this pins is the end state —
+    // one reply, for the position the learner is actually on — not either guard
+    // individually; the test above is the one that discriminates.
+    const user = userEvent.setup();
+    storeSettings({ minThinkTimeMs: 0 });
+    FakeWorker.searchDelayMs = 400;
+    render(<App />);
+    // The opening evaluation starts *and* finishes first, so the only search this
+    // test can abandon is the one it is about. Both halves are needed: the
+    // in-flight count is 0 before the first search is even posted, so waiting on it
+    // alone would pass instantly and the first move would abandon the opening
+    // evaluation as well.
+    await waitFor(() => expect(FakeWorker.searches).toBe(1));
+    await waitFor(() => expect(FakeWorker.inFlightSearches).toBe(0));
+    expect(FakeWorker.abandonedSearches).toBe(0);
+
+    await play(user, 'e2', 'e4');
+    await act(async () => {
+      await sleep(100);
+    });
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    await play(user, 'd2', 'd4');
+
+    // A reply search was abandoned mid-answer, and the board is not left waiting:
+    // the move the engine offered for 1.e4 is never played, and the engine still
+    // answers the position that is on screen.
+    expect(FakeWorker.abandonedSearches).toBe(1);
+    await waitFor(() => expect(moves()).toEqual(['d4', 'Nc6']), { timeout: 5000 });
+    expect(moves()).not.toContain('d5');
   });
 
   it('does not play a reply into the game that replaced it', async () => {

@@ -1230,16 +1230,21 @@ describe('EngineClient', () => {
       // No `go` may appear between the `stop` and the engine's acknowledgement.
       // This is the line the real engine dies on.
       expect(w.sentMatching(MOVETIME)).toHaveLength(1);
-      // The real engine answers a `stop` with `bestmove (none)` and no `info` at
-      // all, which is why the result has to say it was interrupted.
-      w.emit('bestmove (none)');
+      // And the acknowledgement is a **real** bestmove: measured against the 19-lite
+      // WASM, a `stop` 200ms into a `go` is answered 23ms later with
+      // `bestmove d2d4 ponder g8f6`. Not `(none)` — an interrupted search's whole
+      // danger is that it looks like a real answer, and a test that made it look
+      // like "no move" would not be testing that.
+      w.emit('bestmove e2e4');
 
       const settled = await Promise.race([
         p.then(() => 'settled' as const),
         new Promise<'still running'>((r) => setTimeout(() => r('still running'), 1000)),
       ]);
       expect(settled).toBe('settled');
-      await expect(p).resolves.toMatchObject({ bestMove: null, lines: [], depth: 0, aborted: true });
+      // So `aborted` is the only thing distinguishing this from an answer: a
+      // `bestMove` the caller could otherwise have played.
+      await expect(p).resolves.toMatchObject({ bestMove: 'e2e4', aborted: true });
       expect(w.sentMatching(MOVETIME)).toHaveLength(1);
 
       // And the client is usable again: the next search is a normal one, answered
@@ -1259,7 +1264,7 @@ describe('EngineClient', () => {
       const c = new EngineClient();
       const { p, w } = await boot(c, { movetimeMs: 30_000 });
       c.interrupt();
-      w.emit('bestmove (none)');
+      w.emit('bestmove e2e4');
 
       await expect(p).resolves.toBeDefined();
       c.dispose();
@@ -1290,7 +1295,7 @@ describe('EngineClient', () => {
       const { p, w } = await boot(c, { movetimeMs: 30_000 });
 
       c.interrupt();
-      w.emit('bestmove (none)');
+      w.emit('bestmove e2e4');
       await p;
 
       // `ready`, not `error`: an interrupted search is not a failure, and a badge
