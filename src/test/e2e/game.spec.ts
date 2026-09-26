@@ -844,3 +844,71 @@ test('the advice is unhandicapped whatever strength the learner picked', async (
   // The arrow is the hint's own claim about which move to play.
   expect(beginner.arrow).toBe(expert.arrow);
 });
+
+test('all 64 squares are the same size, occupied or not', async ({ page }) => {
+  // The board is rendered lazily enough that `goto` returning is not a guarantee
+  // the squares exist yet; the other tests here wait for one explicitly.
+  await page.goto('/');
+  await page.waitForSelector('[data-square]');
+
+  // This is the only place this can be tested. jsdom has no layout engine, so it
+  // reports every square as 0x0 and cannot see a grid whose rows are sized by
+  // their contents.
+  //
+  // The bug: `.board` set `grid-template-columns` but never `grid-template-rows`,
+  // so the eight rows were implicit and `auto`-sized. `aspect-ratio: 1` still made
+  // the outer box a perfect 560x560, which is why it looked right — but measured,
+  // rows holding a piece came out 99.38px and empty rows 39.61px. A learner sees a
+  // ragged board whose fields change size depending on whether a piece is on them.
+  //
+  // Asserted as a *set* of distinct sizes, not a spot check, so a single odd
+  // square fails: the spread has to be zero, and there have to be exactly 64.
+  const sizes = async () =>
+    page.evaluate(() => {
+      const cells = [...document.querySelectorAll<HTMLElement>('[data-square]')].map((el) => {
+        const r = el.getBoundingClientRect();
+        return { sq: el.dataset.square ?? '', w: +r.width.toFixed(2), h: +r.height.toFixed(2) };
+      });
+      return {
+        cells,
+        occupied: cells.filter((c) => c.sq && document.querySelector(`[data-square="${c.sq}"] img.piece`)).length,
+      };
+    });
+
+  const check = async (label: string) => {
+    const { cells, occupied } = await sizes();
+    const widths = [...new Set(cells.map((c) => c.w))];
+    const heights = [...new Set(cells.map((c) => c.h))];
+    const spread = Math.max(...cells.map((c) => Math.abs(c.w - c.h)));
+    expect(cells, `${label}: 64 squares`).toHaveLength(64);
+    expect(widths, `${label}: every square the same width (${occupied}/64 occupied)`).toHaveLength(1);
+    expect(heights, `${label}: every square the same height (${occupied}/64 occupied)`).toHaveLength(1);
+    expect(widths[0], `${label}: squares are square, not rectangular`).toBe(heights[0]);
+    expect(spread, `${label}: no square differs from another`).toBe(0);
+  };
+
+  await check('start position');
+
+  // The occupancy pattern is the variable, so change it: captures and moves put
+  // pieces on squares that were empty and clear ones that were not. Only the
+  // learner's own moves are scripted — the opponent is stochastic, so its replies
+  // are whatever they are, and the next learner move is chosen from what the board
+  // is actually offering.
+  await play(page, 'e2', 'e4');
+  await check('after 1.e4, with the reply');
+  await play(page, 'g1', 'f3');
+  await check('after a second learner move');
+  await play(page, 'f1', 'c4');
+  await check('after developing a bishop');
+
+  // Flipped, and on the two phone widths the responsive fix targets.
+  await page.getByRole('button', { name: /Flip board/ }).click();
+  await page.waitForTimeout(150);
+  await check('flipped');
+
+  for (const width of [390, 360]) {
+    await page.setViewportSize({ width, height: 780 });
+    await page.waitForTimeout(200);
+    await check(`${width}px viewport`);
+  }
+});

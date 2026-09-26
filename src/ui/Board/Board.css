@@ -51,7 +51,19 @@
 .board {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
+  /* Both axes are explicit and equal. Without `grid-template-rows` the eight
+     rows are implicit and `auto`-sized, so each row took its height from its own
+     content: measured in Chromium, rows holding a piece came out 99.38px and
+     empty rows 39.61px, inside a box that `aspect-ratio` had already made a
+     perfect 560x560. The board looked square and was not.
+     *
+     * `minmax(0, 1fr)` rather than plain `1fr` on both axes, because `1fr` is
+     * `minmax(auto, 1fr)` and the `auto` minimum lets a track grow past its
+     * share to fit content — which is the piece image's intrinsic size. `0` says
+     * a track may shrink below its content, which is what "eight equal squares"
+     * requires. */
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-rows: repeat(8, minmax(0, 1fr));
   aspect-ratio: 1;
   border: 2px solid var(--board-border);
 }
@@ -60,6 +72,10 @@
   position: relative;
   display: grid;
   place-items: center;
+  /* The tracks are already fixed by the grid, so a square must never be able to
+     push its own row or column wider than its share. */
+  min-width: 0;
+  min-height: 0;
   border: 0;
   padding: 0;
   cursor: pointer;
@@ -118,6 +134,13 @@
 .piece {
   position: relative;
   z-index: 1;
+  /* Sized as a percentage of the square, which the grid has already fixed, so the
+     image can no longer feed an intrinsic size back into the track that sized
+     it. `min-width`/`min-height: 0` complete that: without them a replaced
+     element's intrinsic dimensions are the floor its percentage is measured
+     against, and a square with a piece in it ends up taller than an empty one. */
+  min-width: 0;
+  min-height: 0;
   width: 86%;
   height: 86%;
   /* The drop target is the square, not the image under the cursor — which is a
