@@ -859,10 +859,18 @@ describe('EngineClient', () => {
       // A replacement worker has no engine options until it is told, and it is
       // told twice: 8 by the `newGame` that boots it (the play level, the default
       // here) and then 20 by `search` itself, because an advice search is not
-      // handicapped. **The second line is the load-bearing one** — a client that
-      // believed the engine was already at 20 and skipped the write would search
-      // the replacement at 8, which is why `ensureWorker` resets
-      // `skillLevelInEffect` to null.
+      // handicapped.
+      //
+      // **The second line is the one that matters**, and it matters for the
+      // ordinary reason: the engine is now at 8 and the search needs 20, so the
+      // write happens because the values differ. An earlier version of this comment
+      // credited `ensureWorker`'s `skillLevelInEffect = null` as what made the
+      // "only when it differs" optimisation sound, and called this byte
+      // "load-bearing" for that reason. The review measured it: deleting the reset
+      // leaves this assertion green, because the fresh worker is always followed by
+      // the `newGame` above, which re-sends the play level and overwrites the
+      // field. The bytes here are pinned because they are what goes on the wire, not
+      // because some line elsewhere is load-bearing.
       expect(w2.sentMatching(SKILL)).toEqual([
         'setoption name Skill Level value 8',
         'setoption name Skill Level value 20',

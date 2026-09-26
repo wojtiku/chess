@@ -776,11 +776,16 @@ describe('App', () => {
     );
   });
 
-  it('re-states the play level after a hint, and still not for the next evaluation', async () => {
+  it('alternates the two levels across a move: reply, then evaluation', async () => {
     // The two levels alternate on the wire as the learner moves and the app
-    // evaluates: the reply at the play level, the evaluation at 20, the reply at
-    // the play level again. A door that leaked the last level into the next search
-    // would show up here as a missing or a repeated value.
+    // evaluates: the reply at the play level, then the evaluation of the position
+    // the reply created at full strength. A door that leaked the last level into
+    // the next search would show up here as a missing or a repeated value.
+    //
+    // **Named for what it does.** It was called "re-states the play level after a
+    // hint" and never requests a hint — it is the move→reply→evaluation sequence,
+    // which is what the review pointed out. The hint path is covered by the test
+    // above, which does request one.
     const user = userEvent.setup();
     storeSettings({ skillLevel: 1, minThinkTimeMs: 0 });
     render(<App />);

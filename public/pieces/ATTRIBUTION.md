@@ -48,12 +48,25 @@ on a dark square are both low-contrast without one, and a board square is 45px.
 The knight's eye is the only interior detail in the set, and it is there because
 at 45px the difference between "horse" and "lump with a spike on it" is one dot.
 
-The white and black versions of each piece are the same geometry with the two
-colours swapped, which is checked rather than assumed: `pieces.test.ts` asserts that
-`wX.svg` and `bX.svg` are byte-identical once the two hex colour values are
-substituted for each other. Twelve identical copies with two pixels of palette
-swapped would fail that, and so would a set where one piece was quietly drawn at a
-different size from its twin.
+The white and black versions of each piece are the same drawing in opposite
+colours, which is checked rather than assumed. **What the check does**, precisely:
+`pieces.test.ts` reads each `wX.svg` and `bX.svg` from this directory, replaces
+*both* palette values (`#f6f5f1` and `#1d1f24`) with a single token in each file,
+normalises the words `White` and `Black` in the labels, and asserts the two
+remaining documents are equal. So the drawings must match everywhere except the two
+colours and the side named in the text — a changed viewBox, a different stroke
+width, a moved path or a dropped shape all fail it. It also asserts each file
+really uses both colours, in opposite arrangements, so two colourless files could
+not pass by being trivially equal, and that all twelve drawings are distinct from
+one another.
+
+**It does not substitute one palette for the other, and that reading is wrong.**
+An earlier version of this paragraph claimed the files are "byte-identical once the
+two hex colour values are substituted for each other", and the review ran that
+transformation on all six pairs: none match, because `wX.svg` is
+`fill=light stroke=dark` while `bX.svg` is `fill=dark stroke=light`, so swapping
+each file lands the two in opposite arrangements. The test's own comment records
+the same dead end. The claim here is now the one the test actually makes.
 
 **Filenames are lowercase colour, uppercase piece letter** — `wQ`, `bK`. This is
 load-bearing in a way that is invisible on macOS: a set written as `WQ.svg` works

@@ -757,10 +757,20 @@ test('the advice is unhandicapped whatever strength the learner picked', async (
       ([moves, level]: [unknown, number]) => {
         // The difficulty is in the STORED SETTINGS, so the app's very first
         // analysis already runs at that level. Setting it by clicking the radio
-        // after mount does NOT reproduce the bug: the start position's evaluation
-        // is already cached from the default level, so the handicapped search never
-        // happens and the test passes against a broken app. That shape was tried
-        // first and is why this is written this way.
+        // after mount does NOT reproduce the bug, for two reasons, and the deeper
+        // one is the important one:
+        //
+        //   1. this position's evaluation is already cached from the mount search,
+        //      which ran at the default level; and
+        //   2. more fundamentally, **the analysis effect has no skill level in its
+        //      dependencies** (`useGame`), so changing the difficulty never asks
+        //      for a re-search at all — not a cached answer, not a new one, no
+        //      request. There is nothing for the click to invalidate.
+        //
+        // So the click cannot produce a handicapped evaluation of *this* position,
+        // and a test built on it would pass against a broken app. That shape was
+        // tried first — it read a correct +8.6 at Beginner — and is why the
+        // difficulty goes in before the app's first analysis here.
         localStorage.setItem('chess.game.v1', JSON.stringify({ moves }));
         localStorage.setItem(
           'chess.settings.v1',
@@ -796,10 +806,32 @@ test('the advice is unhandicapped whatever strength the learner picked', async (
   const expert = await adviceAt(20);
   const beginner = await adviceAt(1);
 
-  // **The invariant.** The opponent is handicapped; the advice is not. If the
-  // strength setting can still reach an evaluation, these differ — and the
-  // difference is not a rounding wobble, it is a different move and sometimes a
-  // score of 0.0 in a position worth +8.8.
+  // **The invariant.** The opponent is handicapped; the advice is not.
+  //
+  // **This is a smoke detector, not a proof, and a pass does not mean the handicap
+  // is unreachable — only that the two agreed on this run.** The reason is the
+  // engine, not the test: a handicapped search sometimes lands on the same move as
+  // the full-strength one, and the Skill-1 measurements taken before the fix show
+  // 1 of 3 runs matching exactly. So the failure rate under sabotage depends both
+  // on how completely the fix is removed and on those coin flips.
+  //
+  // Two measurements, both real, and the honest summary is that the rate is not a
+  // constant: the review removed all three layers and saw **3 failures in 4**; I
+  // re-measured with the two layers that actually change the answer — the
+  // analysis layer's resolution and `search`'s default — and saw **6 in 6**. The
+  // difference is the sabotage, not the test: removing only the door's argument is
+  // provably a no-op (the default covers it), so "all three" can mean different
+  // things depending on which line you delete. An earlier version of this comment
+  // asserted flatly that "if the strength setting can still reach an evaluation,
+  // these differ", which is false in principle, and the previous report presented
+  // its sabotage table as if the failure were deterministic. Both are corrected.
+  //
+  // **The deterministic gate for the mechanism is in the unit tests**, which assert
+  // the exact `setoption` bytes and the analysis cache key; this test exists
+  // because a fake worker with hard-coded scores is *structurally incapable* of
+  // seeing that Stockfish's handicap is real. It cannot be made certain from the
+  // outside — the thing it checks is an engine that is stochastic by design — so
+  // this comment is the sensitivity.
   expect(
     beginner,
     `the advice must not depend on the opponent's strength: Beginner ${JSON.stringify(beginner)} vs Expert ${JSON.stringify(expert)}`,

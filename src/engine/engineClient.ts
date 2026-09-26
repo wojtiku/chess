@@ -189,13 +189,21 @@ export class EngineClient {
   /**
    * What the live engine is actually set to, or `null` when that is not known.
    *
-   * `null` is the honest initial value and is set again for every fresh worker,
-   * because a new worker starts at Stockfish's own default of 8 regardless of what
-   * this client last sent. `search()` compares against it to avoid re-sending a
-   * `setoption` on every hot-path search, and **that optimisation is only sound
-   * because a rebuilt worker resets it to `null`** — without that, a client that
-   * believed the engine was at 20 would skip the write and the engine would search
-   * at 8.
+   * `null` is the honest initial value, and `ensureWorker` sets it again for every
+   * fresh worker — a new worker starts at Stockfish's own default of 8 whatever
+   * this client last sent, so "what the previous worker was set to" is not an
+   * answer about this one. `search()` compares against this field to avoid
+   * re-sending a `setoption` on every hot-path search.
+   *
+   * **The reset is bookkeeping, not the mechanism, and an earlier version of this
+   * comment claimed otherwise.** It said the optimisation was "only sound because
+   * a rebuilt worker resets it to null". The review measured that claim: deleting
+   * the reset leaves the whole suite green and the wire bytes identical, because
+   * a fresh worker is always followed by `newGame` — the status is `loading`, so
+   * `search` takes the boot path — and `newGame` re-sends the play level
+   * unconditionally and overwrites this field. The reset keeps the field *true*
+   * during the brief window before that happens, and nothing reads it there. So it
+   * stays, and the causal claim goes.
    */
   private skillLevelInEffect: number | null = null;
   private pending: PendingSearch | null = null;
@@ -279,7 +287,9 @@ export class EngineClient {
     w.addEventListener('error', this.onError);
     this.worker = w;
     // A fresh worker has never been told anything, so what it holds is unknown
-    // rather than whatever the previous worker was set to.
+    // rather than whatever the previous worker was set to. Redundant for
+    // correctness — `search` always follows a fresh worker with `newGame`, which
+    // overwrites this — and kept so the field is not lying in between.
     this.skillLevelInEffect = null;
     return w;
   }

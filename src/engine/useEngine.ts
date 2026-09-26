@@ -20,12 +20,7 @@
 //    to explain why.
 
 import { useEffect, useMemo, useState } from 'react';
-import {
-  ADVICE_SKILL_LEVEL,
-  EngineClient,
-  EngineError,
-  type EngineStatus,
-} from '../engine/engineClient';
+import { EngineClient, EngineError, type EngineStatus } from '../engine/engineClient';
 import { makeEngineSource, type Analysis } from '../analysis/evaluate';
 import { createSearchQueue } from './searchQueue';
 
@@ -97,20 +92,29 @@ function openDoor(client: EngineClient): Door {
   const queue = createSearchQueue(() => client.interrupt());
 
   return {
-    // **The advice channel runs at full strength, always.** `analyze` serves both
-    // the eval bar and the hint, both are advice, and the spec's stated reason for
-    // choosing Stockfish is that "weaker engines give advice that is sometimes
-    // wrong, which is worse than no advice" (§3). `Skill Level` WAS reaching these
-    // searches — UCI `setoption` is sticky, and `newGame()` was the only thing that
-    // set it — so a learner on Beginner was told a position eight pawns up was
-    // level. The level is now stated on the search, and this is the call that
-    // supplies it.
+    // **The advice channel runs at full strength, always**, by NOT passing a level
+    // here and taking `EngineClient.search`'s default — which is
+    // `ADVICE_SKILL_LEVEL`. `analyze` serves both the eval bar and the hint, both
+    // are advice, and the spec's stated reason for choosing Stockfish is that
+    // "weaker engines give advice that is sometimes wrong, which is worse than no
+    // advice" (§3). `Skill Level` WAS reaching these searches — UCI `setoption` is
+    // sticky, and `newGame()` was the only thing that set it — so a learner on
+    // Beginner was told a position eight pawns up was level.
     //
-    // Said here as well as in `engineClient` because this is where the two channels
-    // are told apart, and it is the one line a well-meaning edit is most likely to
-    // break: `bestMove` two lines below deliberately does NOT do this.
-    analyze: (fen, opts) =>
-      queue.enqueue(() => source.analyze(fen, { ...opts, skillLevel: ADVICE_SKILL_LEVEL }), false),
+    // **This line used to pass `ADVICE_SKILL_LEVEL` explicitly, and that was a third
+    // copy of one constant.** The review measured it unpinned: deleting it leaves
+    // the whole suite green and `tsc` silent, because `search`'s own default covers
+    // it exactly. A redundant copy of an invariant is not a free extra safety net —
+    // it is a place for the copies to disagree, and a reader cannot tell which one
+    // is load-bearing. So the default lives in one place and the asymmetry below is
+    // expressed by *overriding* it where it is wrong.
+    //
+    // Which is the point of the pair: `bestMove` two lines below passes
+    // `client.playLevel` because the default is *wrong* there. A reader who
+    // deletes that line breaks the difficulty control; a reader who deletes this
+    // one changes nothing. The channels are still told apart in the code, by which
+    // of the two passes an argument.
+    analyze: (fen, opts) => queue.enqueue(() => source.analyze(fen, opts), false),
     // `search` rather than `analyze`: the reply needs the `bestmove` line, and
     // `Analysis` deliberately models an evaluation, not a move.
     //

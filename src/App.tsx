@@ -46,20 +46,24 @@ export default function App() {
   // position's side-to-move score was still in hand and was converted with the NEW
   // position's turn — a mirrored number, which for a bar is a wrong number rather
   // than a missing one. `Analysis` already carries the `fen` it was computed for,
-  // so the honest check is to compare that with the FEN being drawn, and until now
-  // nothing did.
+  // so the check is to compare that with the FEN being drawn.
   //
-  // **This invariant is structural, not test-observable in this stack, and that is
-  // worth knowing before someone tries.** A test for it was written: a
-  // MutationObserver recording every `data-white-share` the bar commits, driven by
-  // a move. It passed against the unfixed code — `act()` and user-event both flush
+  // Pinned by `App.evalGate.test.tsx`, which mocks this hook and hands `App` an
+  // analysis for a different position. Three of its six assertions fail if this
+  // line is removed, so it is a real gate and not a comment.
+  //
+  // **What the first version of that test got wrong, because it is the natural
+  // mistake.** It used a MutationObserver watching `data-white-share` across a
+  // move, and passed against the unfixed code: `act()` and user-event both flush
   // passive effects before the observer's microtask runs, so the mirrored commit
-  // never reaches the DOM the test can see. Sabotage confirmed it: removing this
-  // gate leaves the test green. So the test was removed rather than shipped as one
-  // that proves nothing, which is the failure mode this branch's reviews exist to
-  // catch. Whether the frame reaches a real screen depends on React's effect-flush
-  // ordering for a discrete click, so it may never be visible — but it is in
-  // React's committed model, and a mirrored bar is a wrong bar.
+  // never reached the DOM. The conclusion drawn from that — "this invariant is not
+  // test-observable" — was wrong, and the review was right to reject it. Effect
+  // ordering defeats a test that watches the DOM *over time*; it says nothing about
+  // a gate that is a pure function of committed state. That is what the new test
+  // exercises, with no effect involved at all. Whether the mirrored frame reaches a
+  // real screen still depends on React's effect-flush ordering for a discrete
+  // click, so it may never be visible — but it is in React's committed model, and a
+  // mirrored bar is a wrong bar.
   const drawnFen = g.game.fen();
   const drawn = g.analysis?.fen === drawnFen ? g.analysis : null;
   const lastMove = (() => {
