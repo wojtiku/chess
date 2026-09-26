@@ -1,5 +1,7 @@
+import type { ReactNode } from 'react';
 import type { Chess } from '../../chess/rules';
 import type { PieceType, Side } from '../../chess/types';
+import { srcFor } from '../Board/pieces';
 import './Captured.css';
 
 /** Piece values in pawns. The king is present and worth 0 on purpose: a king is
@@ -7,19 +9,6 @@ import './Captured.css';
  *  `undefined` for a king, which `?? 0` would then quietly absorb — so the row is
  *  written out and a bare-kings position is asserted to be 0. */
 const VALUE: Readonly<Record<PieceType, number>> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
-
-/** The Unicode symbols, keyed by the colour of the piece that was taken — so a
- *  black queen taken by White is drawn as Black's queen, not as a white one.
- *  Written out here rather than imported from `Board/pieces` so this panel needs
- *  nothing but the rules layer; Task 11 replaces both tables with one.
- *
- *  The `k` entries are unreachable — a king is never captured — but they are the
- *  real kings rather than a stand-in pawn, because a table that lies in its one
- *  dead entry is a table nobody can trust in the fifteen that matter. */
-const GLYPH: Readonly<Record<Side, Readonly<Record<PieceType, string>>>> = {
-  b: { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' },
-  w: { p: '♙', n: '♘', b: '♗', r: '♖', q: '♕', k: '♔' },
-};
 
 /** Score-sheet order, heaviest first, which is also the display order. */
 const BY_VALUE: ReadonlyArray<PieceType> = ['q', 'r', 'b', 'n', 'p'];
@@ -100,12 +89,45 @@ export function capturedBy(game: Chess): CapturedBy {
   return taken;
 }
 
-/** The symbols for a set of captured pieces, heaviest first, in their own colour. */
-function symbolsFor(pieces: PieceType[], colour: Side): string {
-  let out = '';
+/**
+ * The pieces on a row, heaviest first, in the colour of the side that LOST them —
+ * so a black queen taken by White is drawn as Black's queen.
+ *
+ * The artwork comes from `Board/pieces`, the one module that knows which file draws
+ * which piece. This panel used to carry its own second copy of the symbol table,
+ * with a comment explaining why it was not imported; that reason did not survive
+ * contact with a piece-set change, because a copy of a lookup is not a copy of the
+ * thing it looks up. A fourth piece type appearing in a captured list is now one
+ * edit here rather than two.
+ *
+ * The `k` case is unreachable — a king is never captured — and stays unreachable
+ * rather than being special-cased: `BY_VALUE` does not list `k`, so a king in the
+ * list is dropped, and `Captured.test.tsx` asserts the two list filters agree with
+ * this ordering table.
+ *
+ * `key` is the position rather than the piece, because two captured pawns are two
+ * elements that must both render: keying on the piece would make React reuse the
+ * first `<img>` for the second, which for a list this short is invisible until
+ * someone captures two queens.
+ */
+function pieceImgs(pieces: PieceType[], colour: Side): ReactNode[] {
+  const out: ReactNode[] = [];
   for (const type of BY_VALUE) {
     for (const piece of pieces) {
-      if (piece === type) out += GLYPH[colour][type];
+      if (piece === type) {
+        out.push(
+          <img
+            key={`${type}-${out.length}`}
+            className="captured-piece"
+            src={srcFor(type, colour)}
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+            width={20}
+            height={20}
+          />,
+        );
+      }
     }
   }
   return out;
@@ -156,14 +178,17 @@ function CapturedRow({
     <div className="captured-row" data-side={side}>
       {/* `role="img"` because that is a role which accepts an accessible name: an
         `aria-label` on a plain `<div>` or `<span>` is ignored by several screen
-        readers, so the brief's row-level `aria-label` would name nothing. */}
+        readers, so the brief's row-level `aria-label` would name nothing. It also
+        makes the row a single announcement: the sixteen `<img>`s inside it carry
+        no names of their own, because a list of filenames is not "a queen and a
+        pawn". */}
       <span
         className="captured-glyphs"
         role="img"
         aria-label={rowLabel(side, pieces, diff)}
         data-testid={`captured-by-${side}`}
       >
-        {symbolsFor(pieces, lostTo)}
+        {pieceImgs(pieces, lostTo)}
       </span>
       {/* Empty rather than "+0": a level game has no advantage to announce, and the
         testid exists so a test can assert the absence as precisely as a presence. */}

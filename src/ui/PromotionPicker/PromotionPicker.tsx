@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { pieceName, srcFor } from '../Board/pieces';
 import './PromotionPicker.css';
 
 export interface PromotionPickerProps {
@@ -8,12 +9,19 @@ export interface PromotionPickerProps {
   onCancel: () => void;
 }
 
-const OPTIONS: ReadonlyArray<{ promotion: 'q' | 'r' | 'b' | 'n'; glyph: string; name: string }> = [
-  { promotion: 'q', glyph: '♕', name: 'queen' },
-  { promotion: 'r', glyph: '♖', name: 'rook' },
-  { promotion: 'b', glyph: '♗', name: 'bishop' },
-  { promotion: 'n', glyph: '♘', name: 'knight' },
-];
+/**
+ * The four pieces a pawn may become, in the order they are offered: queen first,
+ * because it is what a learner wants nine times in ten, and the three underpromotions
+ * after it on equal terms, because they are real moves and not an afterthought.
+ *
+ * **The letters are the whole table.** The artwork and the spoken name are both
+ * derived from `Board/pieces` — the one module that knows what a queen is called
+ * and which file draws her. This panel used to carry its own copy of four Unicode
+ * symbols, which meant a piece set that changed underneath it would leave four
+ * buttons drawing glyphs nothing else on the screen draws, and there was no test
+ * file here at all for anything to catch it.
+ */
+const OPTIONS: ReadonlyArray<'q' | 'r' | 'b' | 'n'> = ['q', 'r', 'b', 'n'];
 
 /** The choice of piece when a pawn reaches the last rank. Underpromotion is offered
  * on equal terms with the queen, because it is a real move and not an afterthought.
@@ -46,14 +54,26 @@ export default function PromotionPicker({ square, onSelect, onCancel }: Promotio
       aria-label="Choose promotion piece"
       data-promotion-square={square}
     >
-      {OPTIONS.map((option) => (
+      {OPTIONS.map((promotion) => (
         <button
-          key={option.promotion}
+          key={promotion}
           type="button"
-          onClick={() => onSelect(option.promotion)}
-          aria-label={`Promote to ${option.name}`}
+          onClick={() => onSelect(promotion)}
+          aria-label={`Promote to ${pieceName(promotion)}`}
         >
-          <span aria-hidden="true">{option.glyph}</span>
+          {/* The learner promotes to a piece of their own colour — this app gives
+              the learner White, and the board is the only thing that knows that.
+              White's artwork, then, in white's outline colour, and `alt=""` because
+              the button's own label already names the piece. */}
+          <img
+            className="promotion-piece"
+            src={srcFor(promotion, 'w')}
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+            width={30}
+            height={30}
+          />
         </button>
       ))}
       <button type="button" className="promotion-cancel" onClick={onCancel} aria-label="Cancel promotion">

@@ -30,8 +30,11 @@ function setup(over: Partial<Props> = {}) {
 /** The button for a square, found by the square half of its accessible name. */
 const sq = (square: string) => screen.getByRole('button', { name: new RegExp(`^${square},`) });
 
-/** The glyph element inside a square, which is what a drop can land on instead of the button. */
-const pieceEl = (square: string) => sq(square).querySelector('.piece');
+/** The piece image inside a square, which is what a drop can land on instead of the button. */
+const pieceEl = (square: string) => sq(square).querySelector('img.piece');
+
+/** The `src` of a square's piece, or null when the square draws no piece. */
+const pieceSrcOf = (square: string) => pieceEl(square)?.getAttribute('src') ?? null;
 
 /** Move focus to a square the way a keyboard user would, and let React settle:
  * focusing a square updates the grid's single tab stop. */
@@ -51,9 +54,9 @@ const PIECE_NAMES: Readonly<Record<string, string>> = {
   p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king',
 };
 
-const PIECE_GLYPHS: Readonly<Record<string, string>> = {
-  wp: '♙', wn: '♘', wb: '♗', wr: '♖', wq: '♕', wk: '♔',
-  bp: '♟', bn: '♞', bb: '♝', br: '♜', bq: '♛', bk: '♚',
+const PIECE_ASSETS: Readonly<Record<string, string>> = {
+  wp: 'wP', wn: 'wN', wb: 'wB', wr: 'wR', wq: 'wQ', wk: 'wK',
+  bp: 'bP', bn: 'bN', bb: 'bB', br: 'bR', bq: 'bQ', bk: 'bK',
 };
 
 describe('Board', () => {
@@ -96,22 +99,68 @@ describe('Board', () => {
       expect(new Set(labelled).size).toBe(32);
     });
 
-    it('draws the starting pieces with their own glyphs', () => {
+    it('draws the starting pieces from their own vendored SVGs', () => {
       setup();
-      // The glyph table, not a sample of three: a rook drawn as a queen is
-      // invisible to a test that only checks a king, a queen and a pawn.
+      // The whole table, not a sample of three: a rook drawn as a queen is
+      // invisible to a test that only checks a king, a queen and a pawn. The
+      // expected `src` is built from the rules layer, so a label attached to the
+      // wrong square fails too.
       const expected = new Chess()
         .board()
         .flat()
         .filter((cell) => cell !== null)
-        .map((cell) => `${cell.square}:${PIECE_GLYPHS[`${cell.color}${cell.type}`]}`);
+        .map((cell) => `${cell.square}:${PIECE_ASSETS[`${cell.color}${cell.type}`]}`);
       for (const entry of expected) {
-        const [square, glyph] = entry.split(':');
-        expect(pieceEl(square ?? '')?.textContent, square).toBe(glyph);
+        const [square, key] = entry.split(':');
+        expect(pieceSrcOf(square ?? ''), square).toBe(`/pieces/${key}.svg`);
       }
       const drawn = expected.map((entry) => entry.split(':')[1]);
-      // White and black versions of a piece are different symbols, so all 32 are.
+      // White and black versions of a piece are different files, so all 32 are.
       expect(new Set(drawn).size).toBe(12);
+    });
+
+    it('names no piece with the image, so a square is announced once', () => {
+      setup();
+      // The button's own `aria-label` is the name. An `<img>` with a real `alt`
+      // inside a labelled button is announced twice, and the second announcement
+      // is a filename — the square's name is the thing under test, so the
+      // artwork must contribute nothing to it.
+      for (const button of screen.getAllByRole('button')) {
+        for (const img of button.querySelectorAll('img')) {
+          expect(img, button.getAttribute('aria-label') ?? '').toHaveAttribute('alt', '');
+          expect(img).toHaveAttribute('aria-hidden', 'true');
+        }
+      }
+      // 32 pieces, 32 images, and not one of them exposed as its own node. The
+      // query rather than `getAllByRole`, because "there are none" is the point.
+      expect(document.querySelectorAll('img.piece')).toHaveLength(32);
+      expect(screen.queryAllByRole('img')).toHaveLength(0);
+    });
+
+    it('labels every square with coordinates it does not otherwise show', () => {
+      setup();
+      // The board's own names already say which square a piece is on, so the
+      // coordinate labels are decoration and are hidden from the accessibility
+      // tree. If they were exposed, a screen-reader user would hear sixteen
+      // letters and digits in a row before reaching the first square.
+      const ranks = document.querySelector('.coord-ranks');
+      const files = document.querySelector('.coord-files');
+      expect(ranks).toHaveAttribute('aria-hidden', 'true');
+      expect(files).toHaveAttribute('aria-hidden', 'true');
+      // From White's side: 8 down to 1 down the left, a to h along the bottom.
+      expect([...ranks!.children].map((n) => n.textContent)).toEqual(['8', '7', '6', '5', '4', '3', '2', '1']);
+      expect([...files!.children].map((n) => n.textContent)).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']);
+    });
+
+    it('flips the coordinate labels with the board, rather than leaving them upside down', () => {
+      // A label that is right the other way up is worse than no label: it tells a
+      // learner the wrong square. The labels are derived from `displaySquares`, so
+      // this is the assertion that they really are.
+      setup({ orientation: 'b' });
+      const ranks = document.querySelector('.coord-ranks')!;
+      const files = document.querySelector('.coord-files')!;
+      expect([...ranks.children].map((n) => n.textContent)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+      expect([...files.children].map((n) => n.textContent)).toEqual(['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a']);
     });
 
     it('names each empty square "<square>, empty"', () => {
@@ -418,6 +467,9 @@ describe('Board', () => {
     });
 
     it('resolves a drop that lands on the piece inside the destination square', () => {
+      // The piece is an image covering 86% of its square, so this is the ordinary
+      // case and not an edge case: the drop target under the pointer is the
+      // artwork, and the search has to walk up to the square from it.
       const { onMove } = setup({ game: new Chess(CAPTURE_FEN) });
       const onPiece = pieceEl('d5');
       expect(onPiece).not.toBeNull();

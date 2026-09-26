@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45" width="45" height="45" role="img" aria-label="White rook">
+  <title>White rook</title>
+  <g fill="#f6f5f1" stroke="#1d1f24" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M11.8 7.6h5.6v3.2h3.5V7.6h3.4v3.2h3.5V7.6h5.6v6.1H11.8z"/>
+      <path d="M14.6 13.7h15.8v3.4H14.6z"/>
+      <path d="M15.9 17.1h13.2l1.9 16.1H14z"/>
+      <rect x="9.4" y="33.2" width="26.2" height="6.8" rx="1.9"/>
+  </g>
+  <g fill="#f6f5f1">
+      <path d="M11.8 7.6h5.6v3.2h3.5V7.6h3.4v3.2h3.5V7.6h5.6v6.1H11.8z"/>
+      <path d="M14.6 13.7h15.8v3.4H14.6z"/>
+      <path d="M15.9 17.1h13.2l1.9 16.1H14z"/>
+      <rect x="9.4" y="33.2" width="26.2" height="6.8" rx="1.9"/>
+  </g>
+</svg>

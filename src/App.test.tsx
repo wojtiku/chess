@@ -724,6 +724,68 @@ describe('App', () => {
     expect(skillOptions().at(0)).toBe(`${SKILL_OPTION}1`);
   });
 
+  // The theme is one field of the settings object, and it is the only preference
+  // with no control of its own in the difficulty panel — so the header's switch is
+  // the whole feature, and nothing else tests it.
+  it('flips the theme, and the flip reaches the document and storage', async () => {
+    const user = userEvent.setup();
+    storeSettings({ minThinkTimeMs: 0, theme: 'light' });
+    render(<App />);
+
+    // The attribute on <html> is what the stylesheet keys on, and it is set in an
+    // effect rather than during render — so this asserts the effect ran, not that
+    // the markup happened to be right.
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('light'));
+    expect(screen.getByRole('button', { name: 'Switch to dark theme' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Switch to dark theme' }));
+
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'));
+    // And it is persisted, so the learner does not get their OS preference back
+    // over their own choice on the next load.
+    await waitFor(() =>
+      expect(localStorage.getItem('chess.settings.v1')).toContain('"theme":"dark"'),
+    );
+
+    // Back the other way, and the button names the other action: a label that
+    // reports the current state instead of the next one tells a screen-reader user
+    // what they already know and leaves them guessing what pressing it does.
+    await user.click(screen.getByRole('button', { name: 'Switch to light theme' }));
+
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('light'));
+    expect(localStorage.getItem('chess.settings.v1')).toContain('"theme":"light"');
+  });
+
+  it('keeps every other setting when the theme is flipped', async () => {
+    // A toggle that wrote `{ theme }` instead of `{ ...settings, theme }` would
+    // silently reset the difficulty, the think time, the orientation and the hint
+    // mode — and "I changed the theme and it started playing like a beginner" is
+    // exactly the bug that is invisible until it has happened.
+    const user = userEvent.setup();
+    storeSettings({
+      skillLevel: 1,
+      minThinkTimeMs: 1200,
+      orientation: 'b',
+      theme: 'light',
+      hintMode: 'good',
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Switch to dark theme' }));
+
+    await waitFor(() =>
+      expect(localStorage.getItem('chess.settings.v1')).toContain('"theme":"dark"'),
+    );
+    const stored = JSON.parse(localStorage.getItem('chess.settings.v1') ?? '{}');
+    expect(stored).toEqual({
+      skillLevel: 1,
+      minThinkTimeMs: 1200,
+      orientation: 'b',
+      theme: 'dark',
+      hintMode: 'good',
+    });
+  });
+
   it('flips the board without touching the game', async () => {
     const user = userEvent.setup();
     storeSettings({ minThinkTimeMs: 0 });

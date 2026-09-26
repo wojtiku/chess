@@ -114,6 +114,33 @@ function isOrientation(value: unknown): value is Settings['orientation'] {
   return value === 'w' || value === 'b';
 }
 
+/**
+ * The theme a first-time visitor gets: whatever their operating system asks for.
+ *
+ * `DEFAULT_SETTINGS.theme` is `'light'` and stays that way, because it is a
+ * constant used by five fallback paths and by the tests that pin the stored
+ * format; a `matchMedia` call in it would make the constant wrong on a learner's
+ * machine. So the question is asked here instead, at the one point where "there is
+ * no stored preference" is actually knowable.
+ *
+ * Two guards, both because this runs in jsdom and in Node as well as in a
+ * browser: `matchMedia` may not exist at all (an old embedded webview, a test
+ * environment), and it may throw (a `SecurityError` from a blocked context, the
+ * same class of failure `localStorage` gets two functions above). Either way the
+ * answer is the constant, which is what the old unconditional `'light'` did.
+ */
+function prefersDark(): boolean {
+  try {
+    return (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Type check only. Whether the move is *playable* is decided by the replay. */
 function isStoredMove(value: unknown): value is StoredMove {
   if (!isRecord(value)) return false;
@@ -152,16 +179,27 @@ function settingsFrom(source: Record<string, unknown>): Settings {
     orientation: isOrientation(source.orientation)
       ? source.orientation
       : DEFAULT_SETTINGS.orientation,
-    theme: isTheme(source.theme) ? source.theme : DEFAULT_SETTINGS.theme,
+    // A recognisable stored theme is the learner's choice and wins; anything else
+    // is the absence of one, which is the only time the OS gets a vote.
+    theme: isTheme(source.theme)
+      ? source.theme
+      : prefersDark() ? 'dark' : DEFAULT_SETTINGS.theme,
     hintMode: isHintMode(source.hintMode) ? source.hintMode : DEFAULT_SETTINGS.hintMode,
   };
 }
 
-/** The settings to use, whatever is in storage. Never throws. */
+/** The settings to use, whatever is in storage. Never throws.
+ *
+ * An empty store is NOT a shortcut around `settingsFrom`: this function used to
+ * `return { ...DEFAULT_SETTINGS }` directly when there was nothing stored, which
+ * looked equivalent and was not — it meant the first-visit theme never reached a
+ * first-time visitor, because the first-visit theme is precisely the case where
+ * nothing is stored. `settingsFrom({})` returns the same five fields as
+ * `DEFAULT_SETTINGS` and asks the OS about the sixth. The early return is gone so
+ * that a first-time visitor and a visitor whose only stored setting is corrupt
+ * cannot end up with a different theme. */
 export function loadSettings(): Settings {
-  const stored = safeParse(safeGet(SETTINGS_KEY));
-  if (!stored) return { ...DEFAULT_SETTINGS };
-  return settingsFrom(stored);
+  return settingsFrom(safeParse(safeGet(SETTINGS_KEY)) ?? {});
 }
 
 /**

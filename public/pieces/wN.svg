@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45" width="45" height="45" role="img" aria-label="White knight">
+  <title>White knight</title>
+  <g fill="#f6f5f1" stroke="#1d1f24" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M10.4 24.6c2-4.4 4.6-8.4 7.4-11.4l1.6-4.6c.4-.9 1.5-1 2-.1l1.9 3.6c3 1.6 5.8 4.2 7.6 7.6 2 4 3.2 8.4 3.2 13.5H13.2c-1.8-2.8-3-6-2.8-8.6z"/>
+      <rect x="9.4" y="33.2" width="26.2" height="6.8" rx="1.9"/>
+  </g>
+  <g fill="#f6f5f1">
+      <path d="M10.4 24.6c2-4.4 4.6-8.4 7.4-11.4l1.6-4.6c.4-.9 1.5-1 2-.1l1.9 3.6c3 1.6 5.8 4.2 7.6 7.6 2 4 3.2 8.4 3.2 13.5H13.2c-1.8-2.8-3-6-2.8-8.6z"/>
+      <rect x="9.4" y="33.2" width="26.2" height="6.8" rx="1.9"/>
+  </g>
+  <g fill="#1d1f24"><circle cx="16.6" cy="20.4" r="1.15"/></g>
+</svg>

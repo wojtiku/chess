@@ -9,10 +9,12 @@ import { render, screen } from '@testing-library/react';
 import { Chess } from '../../chess/rules';
 import Captured, { capturedBy, materialDiff } from './Captured';
 
-/** The standard Unicode symbols, written out here rather than imported from the
+/** The vendored SVG for each piece, written out here rather than imported from the
  *  component: a test that reuses the lookup table it is checking cannot fail. */
-const BLACK_PIECES = { q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' } as const;
-const WHITE_PIECES = { q: '♕', r: '♖', b: '♗', n: '♘', p: '♙' } as const;
+const BLACK_PIECES = { q: 'bQ', r: 'bR', b: 'bB', n: 'bN', p: 'bP' } as const;
+const WHITE_PIECES = { q: 'wQ', r: 'wR', b: 'wB', n: 'wN', p: 'wP' } as const;
+
+const srcOf = (key: string) => `/pieces/${key}.svg`;
 
 /** A game reached by playing real moves. */
 function played(...san: string[]): Chess {
@@ -155,29 +157,40 @@ describe('capturedFor', () => {
 });
 
 describe('Captured', () => {
-  const glyphText = (side: 'w' | 'b') =>
-    screen.getByTestId(`captured-by-${side}`).textContent ?? '';
+  /**
+   * The `src` of every piece drawn on a row, in DOM order.
+   *
+   * This is what the panel's whole ordering and colouring contract is about, and
+   * it has to be read off the elements rather than off `textContent`: the pieces
+   * are images now, so a text assertion would pass on an empty row and pass on a
+   * row of twelve of the wrong piece.
+   */
+  const drawn = (side: 'w' | 'b') =>
+    [...screen.getByTestId(`captured-by-${side}`).querySelectorAll('img')].map((img) =>
+      img.getAttribute('src'),
+    );
 
   it('shows nothing taken and no number at the start of a game', () => {
     render(<Captured game={new Chess()} />);
-    expect(glyphText('w')).toBe('');
-    expect(glyphText('b')).toBe('');
+    expect(drawn('w')).toEqual([]);
+    expect(drawn('b')).toEqual([]);
     expect(screen.queryByText(/^\+\d/)).not.toBeInTheDocument();
     expect(screen.queryByText(/^-\d/)).not.toBeInTheDocument();
   });
 
   it('shows the pawn White has taken and +1 beside it', () => {
     render(<Captured game={ONE_PAWN()} />);
-    expect(glyphText('w')).toBe('♟');
-    expect(glyphText('b')).toBe('');
+    // Black's pawn, because the pieces White took are Black's.
+    expect(drawn('w')).toEqual([srcOf('bP')]);
+    expect(drawn('b')).toEqual([]);
     expect(screen.getByText('+1')).toBeInTheDocument();
   });
 
   it('shows a trade with no material number at all, on either row', () => {
     // Not "+0" and not "-0": the game is level and the honest display is silence.
     render(<Captured game={TRADED()} />);
-    expect(glyphText('w')).toBe('♟');
-    expect(glyphText('b')).toBe('♙');
+    expect(drawn('w')).toEqual([srcOf('bP')]);
+    expect(drawn('b')).toEqual([srcOf('wP')]);
     expect(screen.queryByText(/[+-]\d/)).not.toBeInTheDocument();
   });
 
@@ -193,30 +206,31 @@ describe('Captured', () => {
     // that hangs the number off the capture lists gets this backwards, and the
     // +6 fixture above cannot see it because there the two happen to agree.
     render(<Captured game={BLACK_UP_ONE()} />);
-    expect(glyphText('w')).toBe('♟♟');
+    expect(drawn('w')).toEqual([srcOf('bP'), srcOf('bP')]);
     // The knight Black took is a WHITE piece, so it is drawn as one.
-    expect(glyphText('b')).toBe('♘');
+    expect(drawn('b')).toEqual([srcOf('wN')]);
     expect(screen.getByTestId('captured-advantage-w')).toBeEmptyDOMElement();
     expect(screen.getByTestId('captured-advantage-b').textContent).toBe('-1');
   });
 
   it('draws each captured piece in its own colour, heaviest first', () => {
-    // The queen was taken after the pawn, so a history-order list would read "♟♛" —
-    // which no score sheet in the world writes. And the pieces White took are drawn
-    // as Black's (♛♟) while the pieces Black took are drawn as White's (♗♙).
+    // The queen was taken after the pawn, so a history-order list would read
+    // "pawn, queen" — which no score sheet in the world writes. And the pieces
+    // White took are drawn as Black's (bQ, bP) while the pieces Black took are
+    // drawn as White's (wB, wP).
     render(<Captured game={SIX_UP()} />);
-    expect(glyphText('w')).toBe([BLACK_PIECES.q, BLACK_PIECES.p].join(''));
-    expect(glyphText('b')).toBe([WHITE_PIECES.b, WHITE_PIECES.p].join(''));
+    expect(drawn('w')).toEqual([srcOf(BLACK_PIECES.q), srcOf(BLACK_PIECES.p)]);
+    expect(drawn('b')).toEqual([srcOf(WHITE_PIECES.b), srcOf(WHITE_PIECES.p)]);
   });
 
   it('reports a promoted queen as material with nothing captured', () => {
     // Seven pawns have left the board and none was taken: the number is real and the
-    // glyph runs are empty, which is the only way those two facts can both be shown.
+    // rows are empty, which is the only way those two facts can both be shown.
     const promo = new Chess('4k3/P7/8/8/8/8/8/4K3 w - - 0 1');
     promo.move({ from: 'a7', to: 'a8', promotion: 'q' });
     render(<Captured game={promo} />);
-    expect(glyphText('w')).toBe('');
-    expect(glyphText('b')).toBe('');
+    expect(drawn('w')).toEqual([]);
+    expect(drawn('b')).toEqual([]);
     expect(screen.getByTestId('captured-advantage-w').textContent).toBe('+9');
   });
 
@@ -231,8 +245,8 @@ describe('Captured', () => {
     const loaded = new Chess('rnbqkbnr/ppp1pppp/8/3P4/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2');
     expect(loaded.history()).toEqual([]);
     render(<Captured game={loaded} />);
-    expect(glyphText('w')).toBe('');
-    expect(glyphText('b')).toBe('');
+    expect(drawn('w')).toEqual([]);
+    expect(drawn('b')).toEqual([]);
     expect(screen.getByTestId('captured-advantage-w').textContent).toBe('+1');
     // The spoken label states the contradiction outright — "nothing" taken, and yet
     // up a pawn — which is the loudest this failure can be. A screen-reader user
@@ -251,7 +265,7 @@ describe('Captured', () => {
   });
 
   it('announces each row with the side, the pieces and the material, in words', () => {
-    // The glyphs are decorative and the digits are not speakable, so the row
+    // The artwork is decorative and the digits are not speakable, so the row
     // carries a sentence for a screen reader instead of two fragments.
     render(<Captured game={SIX_UP()} />);
     expect(screen.getByTestId('captured-by-w')).toHaveAttribute(
@@ -275,6 +289,21 @@ describe('Captured', () => {
     });
     expect(named).toBe(screen.getByTestId('captured-by-w'));
     expect(screen.getAllByRole('img')).toHaveLength(2);
+  });
+
+  // The pieces are `<img>`s now, and an image with a real `alt` inside a row that
+  // is already one named image is announced a third time — as a filename, or as
+  // "queen" on top of "a queen and a pawn". So the artwork contributes nothing and
+  // the count of *exposed* images stays at the two rows, whatever is drawn on them.
+  it('exposes exactly two images however many pieces a row holds', () => {
+    render(<Captured game={SIX_UP()} />);
+    // Four pieces are drawn and none of them is in the accessibility tree.
+    expect(document.querySelectorAll('img')).toHaveLength(4);
+    expect(screen.getAllByRole('img')).toHaveLength(2);
+    for (const img of document.querySelectorAll('img')) {
+      expect(img).toHaveAttribute('alt', '');
+      expect(img).toHaveAttribute('aria-hidden', 'true');
+    }
   });
 
   it('says "nothing" for a side that has taken no pieces', () => {

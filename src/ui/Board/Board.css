@@ -1,5 +1,40 @@
+/* The frame owns the coordinate gutter, so neither the ranks nor the files are
+   grid items of `.board` and cannot add a ninth row or column to the 8x8. The
+   rank column is `auto` so it is exactly as wide as one digit. */
+.board-frame {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: 1fr auto;
+}
+
+.coord {
+  display: flex;
+  font: 600 11px/1 system-ui, sans-serif;
+  color: var(--board-border);
+  opacity: 0.85;
+  /* Off the light/dark squares, in the page background, so a label is never
+     mistaken for part of the grid. */
+  user-select: none;
+}
+
+.coord-ranks {
+  grid-area: 1 / 1;
+  flex-direction: column;
+  /* One label per board row: the 8 are equal because `.board`'s rows are. */
+  justify-content: space-around;
+  padding-right: 3px;
+  align-items: flex-end;
+}
+
+.coord-files {
+  grid-area: 2 / 2;
+  justify-content: space-around;
+  padding-top: 3px;
+}
+
 .board-wrap {
   position: relative;
+  grid-area: 1 / 2;
   width: min(90vmin, 560px);
 }
 
@@ -18,7 +53,6 @@
   border: 0;
   padding: 0;
   cursor: pointer;
-  font-size: min(7vmin, 42px);
   line-height: 1;
 }
 
@@ -66,10 +100,18 @@
   border: 5px solid rgba(0, 0, 0, 0.28);
 }
 
+/* A vendored SVG, sized as a fraction of its square rather than in `em`: the
+   artwork is drawn on its own 45x45 viewBox, so 86% of the square is 86% of the
+   artwork at any board size. `width`/`height` on the element in the markup are
+   the fallback for a browser that has not loaded the stylesheet yet, and are
+   overridden by this rule. */
 .piece {
   position: relative;
   z-index: 1;
-  /* The drop target is the square, not the glyph under the cursor. */
+  width: 86%;
+  height: 86%;
+  /* The drop target is the square, not the image under the cursor — which is a
+     real thing to hit here, where the image covers 86% of the square. */
   pointer-events: none;
   user-select: none;
 }

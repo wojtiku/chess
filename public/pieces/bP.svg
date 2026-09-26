@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45" width="45" height="45" role="img" aria-label="Black pawn">
+  <title>Black pawn</title>
+  <g fill="#1d1f24" stroke="#f6f5f1" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round">
+      <circle cx="22.5" cy="12.6" r="4.7"/>
+      <path d="M22.5 17.2c3.2 0 6.1 1.7 6.1 4.2 0 2.3-1.9 3.4-2.3 5.5-.5 2.5 0 4.6 1.1 6.3H17.6c1.1-1.7 1.6-3.8 1.1-6.3-.4-2.1-2.3-3.2-2.3-5.5 0-2.5 2.9-4.2 6.1-4.2z"/>
+      <rect x="9.4" y="33.2" width="26.2" height="6.8" rx="1.9"/>
+  </g>
+  <g fill="#1d1f24">
+      <circle cx="22.5" cy="12.6" r="4.7"/>
+      <path d="M22.5 17.2c3.2 0 6.1 1.7 6.1 4.2 0 2.3-1.9 3.4-2.3 5.5-.5 2.5 0 4.6 1.1 6.3H17.6c1.1-1.7 1.6-3.8 1.1-6.3-.4-2.1-2.3-3.2-2.3-5.5 0-2.5 2.9-4.2 6.1-4.2z"/>
+      <rect x="9.4" y="33.2" width="26.2" height="6.8" rx="1.9"/>
+  </g>
+</svg>

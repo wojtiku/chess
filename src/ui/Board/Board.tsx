@@ -4,7 +4,7 @@ import type { Chess } from '../../chess/rules';
 import { legalMovesVerbose, parsePromotion } from '../../chess/rules';
 import { displaySquares, stepSquare, type ArrowKey, type Orientation } from './squares';
 import { arrowEnds, squareCentre, type BoardArrow } from './arrows';
-import { pieceGlyph, pieceLabel } from './pieces';
+import { pieceLabel, pieceSrc } from './pieces';
 import PromotionPicker from '../PromotionPicker/PromotionPicker';
 import './Board.css';
 
@@ -129,6 +129,17 @@ export default function Board({
   const pieces = useMemo(() => piecesBySquare(game), [position, game]);
   const squares = useMemo(() => displaySquares(orientation), [orientation]);
 
+  // The coordinate labels, taken from `squares` rather than from a second list of
+  // files and ranks: `displaySquares` is the one thing that decides what order the
+  // board draws in, so deriving the labels from it is what keeps a flipped
+  // board's labels flipped. A label that is right the other way up is worse than
+  // no label — it tells a learner the wrong square.
+  const rankDigits = useMemo(
+    () => squares.filter((_, i) => i % 8 === 0).map(({ square }) => square[1]),
+    [squares],
+  );
+  const fileLetters = useMemo(() => squares.slice(0, 8).map(({ square }) => square[0]), [squares]);
+
   const turn = game.turn();
   // `inCheck()` rather than `statusOf(...).check`, because `checkmate` is a
   // terminal status with no `check` field: gating on `kind === 'playing'` would
@@ -233,99 +244,157 @@ export default function Board({
   }, [clearSelection]);
 
   return (
-    <div className="board-wrap">
-      <div
-        className="board"
-        role="grid"
-        aria-label="Chess board"
-        ref={boardRef}
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={onDrop}
-      >
-        {squares.map(({ square, light }) => {
-          const piece = pieces.get(square);
-          const target = targets.get(square);
-          const isTarget = target !== undefined && target.isTarget;
-          const isCapture = target !== undefined && target.isTarget && target.isCapture;
-          return (
-            <button
-              key={square}
-              type="button"
-              className={`square ${light ? 'light' : 'dark'}`}
-              data-square={square}
-              data-target={isTarget || undefined}
-              data-capture={isCapture || undefined}
-              data-selected={selected === square || undefined}
-              data-last={(lastMove?.from === square || lastMove?.to === square) || undefined}
-              data-check={checkSquare === square || undefined}
-              aria-label={`${square}, ${piece ? pieceLabel(piece) : 'empty'}`}
-              // Roving tabindex: the grid is one Tab stop and the arrow keys move
-              // within it, so reaching a square does not mean 64 presses of Tab.
-              tabIndex={square === focusAnchor ? 0 : -1}
-              draggable={piece !== undefined && piece.color === turn && interactive}
-              onFocus={() => setTabStop(square)}
-              onClick={() => activateSquare(square)}
-              onKeyDown={(event) => onSquareKeyDown(event, square)}
-              onDragStart={(event) => {
-                // Some browsers refuse to start a drag whose payload is empty.
-                event.dataTransfer?.setData('text/plain', square);
-                setDragging(square);
-              }}
-              onDragEnd={() => setDragging(null)}
-            >
-              {piece && (
-                <span className="piece" aria-hidden="true">
-                  {pieceGlyph(piece)}
-                </span>
-              )}
-            </button>
-          );
-        })}
-
-        <svg className="arrows" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
-          <defs>
-            <marker
-              id={markerId}
-              markerWidth="4"
-              markerHeight="4"
-              refX="3"
-              refY="2"
-              orient="auto"
-            >
-              <path d="M0,0 L4,2 L0,4 z" fill="currentColor" />
-            </marker>
-          </defs>
-          {arrows.map((arrow, index) => {
-            const ends = arrowEnds(arrow.from, arrow.to, orientation);
-            // A hint that is not a pair of squares gets no arrow rather than a line
-            // full of NaN, and one bad hint does not hide the others.
-            if (ends === null) return null;
-            return (
-              <line
-                key={`${arrow.from}-${arrow.to}-${index}`}
-                data-testid={`arrow-${arrow.from}-${arrow.to}`}
-                x1={ends.x1}
-                y1={ends.y1}
-                x2={ends.x2}
-                y2={ends.y2}
-                stroke="currentColor"
-                strokeWidth="1.6"
-                markerEnd={`url(#${markerId})`}
-              />
-            );
-          })}
-        </svg>
+    <div className="board-frame">
+      {/* Coordinates, in the gutter outside the grid. Absolutely positioned inside
+          a wrapper of their own so they are neither grid items (which would add
+          rows and columns to the 8x8) nor inside `.board-wrap` (whose percentages
+          the promotion picker anchors itself to — see `anchorStyle`).
+          `aria-hidden`: the board's accessible names already say which square
+          every piece is on, so a screen-reader user gets "e2, white pawn" and
+          "a file label in a list of sixteen" is noise on top of it. Decorative
+          text, deliberately not part of the accessibility tree. */}
+      <div className="coord coord-ranks" aria-hidden="true">
+        {rankDigits.map((digit) => (
+          <span key={digit}>{digit}</span>
+        ))}
       </div>
 
-      {pendingPromotion && (
-        <div className="promotion-anchor" style={anchorStyle(pendingPromotion.to, orientation)}>
-          <PromotionPicker
-            square={pendingPromotion.to}
-            onSelect={onPromotionSelect}
-            onCancel={onPromotionCancel}
-          />
+      <div className="board-wrap">
+        <div
+          className="board"
+          // `role="grid"` with `role="button"` cells is not strictly valid ARIA:
+          // a grid's children should be `row`s containing `gridcell`s, and a
+          // `gridcell` may not be a `button`. It is also, deliberately, what this
+          // board is — 64 focusable, labelled, clickable squares that never move,
+          // and every test in the suite (and every learner's screen reader,
+          // which reads a button as something you can press) depends on it.
+          //
+          // Do not "fix" this by inserting `role="row"` wrappers or switching the
+          // squares to `gridcell`: that changes every accessible name and every
+          // query in the suite, and it would trade a documented inaccuracy for a
+          // set of 64 controls a keyboard user can no longer Tab to.
+          //
+          // `aria-rowindex`/`aria-colindex` are NOT added either. They are only
+          // valid on `row`, `gridcell` and `rowgroup` — also not `button` — so on
+          // these squares they would be a second inaccurate attribute rather than
+          // a repair of the first. Fixing this properly is a redesign of the
+          // board's semantics and belongs in its own task, not in a task about
+          // artwork.
+          role="grid"
+          aria-label="Chess board"
+          ref={boardRef}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={onDrop}
+        >
+          {squares.map(({ square, light }) => {
+            const piece = pieces.get(square);
+            const target = targets.get(square);
+            const isTarget = target !== undefined && target.isTarget;
+            const isCapture = target !== undefined && target.isTarget && target.isCapture;
+            return (
+              <button
+                key={square}
+                type="button"
+                className={`square ${light ? 'light' : 'dark'}`}
+                data-square={square}
+                data-target={isTarget || undefined}
+                data-capture={isCapture || undefined}
+                data-selected={selected === square || undefined}
+                data-last={(lastMove?.from === square || lastMove?.to === square) || undefined}
+                data-check={checkSquare === square || undefined}
+                aria-label={`${square}, ${piece ? pieceLabel(piece) : 'empty'}`}
+                // Roving tabindex: the grid is one Tab stop and the arrow keys move
+                // within it, so reaching a square does not mean 64 presses of Tab.
+                tabIndex={square === focusAnchor ? 0 : -1}
+                draggable={piece !== undefined && piece.color === turn && interactive}
+                onFocus={() => setTabStop(square)}
+                onClick={() => activateSquare(square)}
+                onKeyDown={(event) => onSquareKeyDown(event, square)}
+                onDragStart={(event) => {
+                  // Some browsers refuse to start a drag whose payload is empty.
+                  event.dataTransfer?.setData('text/plain', square);
+                  setDragging(square);
+                }}
+                onDragEnd={() => setDragging(null)}
+              >
+                {/*
+                  The piece is an image with an empty `alt`, and the square's own
+                  `aria-label` is what names it. An `alt` of "white pawn" would be
+                  announced twice — once by the button's label and once by the image
+                  inside it — so the artwork is hidden and the name comes from the
+                  one place that already had it.
+  
+                  `src` is resolved once per render rather than read as a variable,
+                  so a piece this set has no artwork for renders nothing at all
+                  instead of an `<img>` with an empty `src` and the browser's
+                  missing-image icon in the middle of a square.
+                */}
+                {pieceSrc(piece) !== null && (
+                  <img
+                    className="piece"
+                    src={pieceSrc(piece) ?? undefined}
+                    alt=""
+                    aria-hidden="true"
+                    draggable={false}
+                    width={45}
+                    height={45}
+                  />
+                )}
+              </button>
+            );
+          })}
+  
+          <svg className="arrows" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+            <defs>
+              <marker
+                id={markerId}
+                markerWidth="4"
+                markerHeight="4"
+                refX="3"
+                refY="2"
+                orient="auto"
+              >
+                <path d="M0,0 L4,2 L0,4 z" fill="currentColor" />
+              </marker>
+            </defs>
+            {arrows.map((arrow, index) => {
+              const ends = arrowEnds(arrow.from, arrow.to, orientation);
+              // A hint that is not a pair of squares gets no arrow rather than a line
+              // full of NaN, and one bad hint does not hide the others.
+              if (ends === null) return null;
+              return (
+                <line
+                  key={`${arrow.from}-${arrow.to}-${index}`}
+                  data-testid={`arrow-${arrow.from}-${arrow.to}`}
+                  x1={ends.x1}
+                  y1={ends.y1}
+                  x2={ends.x2}
+                  y2={ends.y2}
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  markerEnd={`url(#${markerId})`}
+                />
+              );
+            })}
+          </svg>
         </div>
-      )}
+
+        {pendingPromotion && (
+          <div className="promotion-anchor" style={anchorStyle(pendingPromotion.to, orientation)}>
+            <PromotionPicker
+              square={pendingPromotion.to}
+              onSelect={onPromotionSelect}
+              onCancel={onPromotionCancel}
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="coord coord-files" aria-hidden="true">
+        {fileLetters.map((letter) => (
+          <span key={letter}>{letter}</span>
+        ))}
+      </div>
     </div>
   );
 }

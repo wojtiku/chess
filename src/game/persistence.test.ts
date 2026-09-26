@@ -160,6 +160,126 @@ describe('persistence', () => {
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
   });
 
+  /**
+   * The one preference the operating system gets a vote on.
+   *
+   * `DEFAULT_SETTINGS.theme` is `'light'` and stays that way — it is the fallback
+   * for five paths and is pinned by the stored-format test above, so a
+   * `matchMedia` call inside it would make the constant wrong on a learner's
+   * machine. The question is asked in `settingsFrom` instead, at the one point
+   * where "there is no stored preference" is knowable.
+   */
+  describe('the first-visit theme', () => {
+    /**
+     * A `matchMedia` that answers `matches` for the dark query.
+     *
+     * Installed on `window` with `defineProperty` rather than `vi.spyOn`, because
+     * **jsdom does not implement `matchMedia` at all** — verified, not assumed:
+     * `typeof window.matchMedia` is `'undefined'` in this environment. That is
+     * precisely the case `prefersDark`'s `typeof === 'function'` guard exists for,
+     * and it means these tests are the only place the dark path can be exercised.
+     *
+     * `as never` because jsdom's `MediaQueryList` is far more than the one member
+     * the production code reads, and a hand-rolled object cannot be a real one.
+     */
+    function prefersDark(matches: boolean) {
+      const queries: string[] = [];
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        writable: true,
+        value: (query: string) => {
+          queries.push(query);
+          return { matches, media: query } as never;
+        },
+      });
+      return queries;
+    }
+
+    afterEach(() => {
+      // Back to jsdom's state, which is "no matchMedia at all" — so the guard in
+      // `prefersDark` is exercised by the rest of this file as well.
+      //
+      // Guarded, because the last test in this block sets `window` itself to
+      // `undefined` and `vi.unstubAllGlobals` has not run yet at this point; the
+      // order of the two teardowns is the file's, not this block's.
+      if (typeof window !== 'undefined') Reflect.deleteProperty(window, 'matchMedia');
+    });
+
+    it('is dark when the OS asks for dark and nothing is stored', () => {
+      prefersDark(true);
+      expect(loadSettings().theme).toBe('dark');
+    });
+
+    it('is light when the OS asks for light and nothing is stored', () => {
+      // The positive control: a function that always said `true` would pass the
+      // test above and this one, so the two are both required.
+      prefersDark(false);
+      expect(loadSettings().theme).toBe('light');
+    });
+
+    it('is asked for with the dark query, and nothing else', () => {
+      // One call, and it is this query. A `prefers-color-scheme: light` check, or
+      // a second query, would both be a bug no other test here can see.
+      const queries = prefersDark(true);
+      loadSettings();
+      expect(queries).toEqual(['(prefers-color-scheme: dark)']);
+    });
+
+    it('defers to a stored theme, whichever the OS says', () => {
+      // The override. A learner who has chosen light in a dark-OS browser must not
+      // be overruled on the next load, which is what makes the header's switch
+      // worth having at all.
+      prefersDark(true);
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ theme: 'light' }));
+      expect(loadSettings().theme).toBe('light');
+
+      prefersDark(false);
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ theme: 'dark' }));
+      expect(loadSettings().theme).toBe('dark');
+    });
+
+    it('is not asked about at all when a stored theme is readable', () => {
+      const queries = prefersDark(true);
+      saveSettings({ ...DEFAULT_SETTINGS, theme: 'dark' });
+      expect(loadSettings().theme).toBe('dark');
+      // Zero calls, not zero effect: the OS is irrelevant once a choice is stored.
+      expect(queries).toEqual([]);
+    });
+
+    it('falls back to light where matchMedia does not exist, rather than throwing', () => {
+      // An old embedded webview, or a non-browser host that has run this module.
+      // This is not a hypothetical: jsdom itself is in this state, and
+      // `loadSettings` runs during render, so a throw here is a blank app.
+      expect(typeof window.matchMedia).toBe('undefined');
+      expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
+    });
+
+    it('falls back to light where matchMedia throws, rather than propagating', () => {
+      // A `SecurityError` from a blocked context is the same failure mode as
+      // `localStorage` refusing to be read, and gets the same treatment: the
+      // question is not answered and the constant is used.
+      prefersDarkAndThrow();
+      expect(loadSettings().theme).toBe('light');
+    });
+
+    it('falls back to light when there is no window at all', () => {
+      // Node, and a service worker importing the module. The `typeof` guard is
+      // what makes `prefersDark` total rather than a `ReferenceError`.
+      vi.stubGlobal('window', undefined);
+      expect(loadSettings().theme).toBe('light');
+    });
+
+    function prefersDarkAndThrow() {
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        writable: true,
+        value: () => {
+          throw new Error('matchMedia is blocked by this context');
+        },
+      });
+    }
+  });
+
   it('round-trips a move list', () => {
     saveGame([{ from: 'e2', to: 'e4' }, { from: 'e7', to: 'e5', promotion: undefined }]);
     expect(loadGame()?.moves).toHaveLength(2);

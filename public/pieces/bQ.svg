@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45" width="45" height="45" role="img" aria-label="Black queen">
+  <title>Black queen</title>
+  <g fill="#1d1f24" stroke="#f6f5f1" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round">
+      <circle cx="11.9" cy="10.4" r="2.1"/>
+      <circle cx="22.5" cy="6.6" r="2.4"/>
+      <circle cx="33.1" cy="10.4" r="2.1"/>
+      <path d="M8.9 30.8 11.9 13.1l5.2 7.6 5.4-11.2 5.4 11.2 5.2-7.6 3 17.7z"/>
+      <path d="M9.4 30.8h26.2v2.6H9.4z"/>
+      <rect x="9.4" y="33.2" width="26.2" height="6.8" rx="1.9"/>
+  </g>
+  <g fill="#1d1f24">
+      <circle cx="11.9" cy="10.4" r="2.1"/>
+      <circle cx="22.5" cy="6.6" r="2.4"/>
+      <circle cx="33.1" cy="10.4" r="2.1"/>
+      <path d="M8.9 30.8 11.9 13.1l5.2 7.6 5.4-11.2 5.4 11.2 5.2-7.6 3 17.7z"/>
+      <path d="M9.4 30.8h26.2v2.6H9.4z"/>
+      <rect x="9.4" y="33.2" width="26.2" height="6.8" rx="1.9"/>
+  </g>
+</svg>

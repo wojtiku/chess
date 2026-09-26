@@ -49,6 +49,32 @@ export default function App() {
       <header className="app-header">
         <h1>Chess Practice Board</h1>
         <p className="app-sub">You play White. Take your time.</p>
+        {/*
+          The theme switch, in the header and nowhere else, because it is a
+          preference rather than a move: it writes one field of the settings object
+          and reads nothing else. Kept inline rather than given a panel of its own
+          because it has no logic — a target, a label, and a spread of the settings
+          it was handed, so a component would be three lines of indirection around
+          `setSettings`.
+
+          The label is the ACTION and not the current state, so a screen-reader
+          user hears what pressing it will do ("Switch to dark theme") rather than
+          a state they already know and have to interpret. The default comes from
+          `prefers-color-scheme` in `persistence.ts`, which is the one place that
+          can tell "no stored preference" from "a stored light preference"; this
+          button therefore only ever overrides it, and the override is persisted
+          like every other setting.
+        */}
+        <button
+          type="button"
+          className="theme-toggle"
+          onClick={() =>
+            g.setSettings({ ...g.settings, theme: g.settings.theme === 'dark' ? 'light' : 'dark' })
+          }
+        >
+          <span aria-hidden="true">{g.settings.theme === 'dark' ? '☀' : '☾'}</span>
+          Switch to {g.settings.theme === 'dark' ? 'light' : 'dark'} theme
+        </button>
       </header>
 
       <div className="app-main">

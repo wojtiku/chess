@@ -1,20 +1,90 @@
-// Unicode chess glyphs for now. Task 11 replaces this module's lookups with
-// vendored SVGs; the two functions below are the contract either way — a key for
-// the asset and a spoken description for the square's accessible name.
+// The one place a piece is named. Everything that draws a piece — the board, the
+// captured-pieces panel, the promotion picker — reads its artwork and its spoken
+// name from here, so there is no second table to fall out of step with the first.
+//
+// There WERE three: this module's own glyph lookup, `Captured.tsx`'s copy (so
+// that panel "needs nothing but the rules layer"), and `PromotionPicker.tsx`'s
+// four hardcoded symbols. Two of those were untested copies of the third, and the
+// promotion picker had no test file at all, so a mistake in it would have shipped
+// silently. The only reason a lookup may be duplicated is a test that owns its
+// own copy of the expected values, which is a different thing.
+//
+// The pieces themselves are twelve SVGs in `public/pieces/`, vendored and served
+// as static assets: see `public/pieces/ATTRIBUTION.md`. The brief's `ComponentType`
+// re-export is deliberately NOT here — it was dead weight copied from the plan's
+// sketch, and nothing in the app renders a piece as a React component.
 
-const GLYPHS: Record<string, string> = {
-  wp: '♙', wn: '♘', wb: '♗', wr: '♖', wq: '♕', wk: '♔',
-  bp: '♟', bn: '♞', bb: '♝', br: '♜', bq: '♛', bk: '♚',
+import type { PieceType, Side } from '../../chess/types';
+
+/** The shape a caller may hand in. Chess.js's own cell is assignable to it. */
+export interface PieceLike {
+  type: string;
+  color: string;
+}
+
+/** The file stem of a piece's SVG: colour letter, capitalised piece letter. */
+const KEYS: Readonly<Record<Side, Readonly<Record<PieceType, string>>>> = {
+  w: { p: 'wP', n: 'wN', b: 'wB', r: 'wR', q: 'wQ', k: 'wK' },
+  b: { p: 'bP', n: 'bN', b: 'bB', r: 'bR', q: 'bQ', k: 'bK' },
 };
 
-const NAMES: Record<string, string> = {
+/** How a piece type is announced on its own, with no colour in front of it. */
+const NAMES: Readonly<Record<PieceType, string>> = {
   p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king',
 };
 
-/** The glyph to draw, or null for an empty square or an unknown piece. */
-export function pieceGlyph(piece: { type: string; color: string } | undefined): string | null {
-  if (!piece) return null;
-  return GLYPHS[`${piece.color}${piece.type}`] ?? null;
+/** Whether `color` is a side this table has artwork for. */
+function isSide(value: string): value is Side {
+  return value === 'w' || value === 'b';
+}
+
+/** Whether `type` is a piece this table has artwork for.
+ *
+ * A membership test rather than a cast, and the same reason `Captured` filters on
+ * `cell.type in VALUE`: `PieceType` is a compile-time claim about a string the
+ * DOM or the library produced at runtime, and a seventh letter must be a `null`
+ * this function can report — not an `undefined` that renders as a broken image or
+ * throws on a property read. */
+function isPieceType(value: string): value is PieceType {
+  return value in NAMES;
+}
+
+/** The SVG file stem for a piece — `wQ` — or `null` for one this set has no
+ * artwork for. An absent piece is the same answer: `undefined` and `null` both
+ * mean an empty square, and both are checked with `== null` rather than
+ * `=== undefined` because the callers are a `Map.get` (which returns
+ * `undefined`) and a `Record` read (which can hand back `null`), and a
+ * property read on `null` is a thrown TypeError rather than a wrong answer. */
+export function pieceKey(piece: PieceLike | undefined | null): string | null {
+  if (piece == null) return null;
+  if (!isSide(piece.color) || !isPieceType(piece.type)) return null;
+  return KEYS[piece.color][piece.type];
+}
+
+/** The URL of the piece's SVG, or `null` when there is nothing to draw.
+ *
+ * `null` rather than a broken `src`: a caller that rendered `<img src="">` for an
+ * unknown piece would show the browser's missing-image icon in the middle of a
+ * square, which is exactly as wrong as a blank one and much harder to miss. */
+export function pieceSrc(piece: PieceLike | undefined | null): string | null {
+  const key = pieceKey(piece);
+  return key === null ? null : `/pieces/${key}.svg`;
+}
+
+/**
+ * A piece's artwork URL, for a caller that already holds a checked `PieceType`
+ * and `Side` — `Captured`'s capture lists and the promotion picker's four
+ * options. One source of truth for the path, with none of the narrowing: a typed
+ * caller cannot be given a piece this set has no artwork for, so re-deriving the
+ * key at runtime would be work whose only outcome is a branch that cannot fail.
+ */
+export function srcFor(type: PieceType, colour: Side): string {
+  return `/pieces/${KEYS[colour][type]}.svg`;
+}
+
+/** A piece type's own name: `queen`, not `white queen`. */
+export function pieceName(type: PieceType): string {
+  return NAMES[type];
 }
 
 /**
@@ -22,9 +92,11 @@ export function pieceGlyph(piece: { type: string; color: string } | undefined): 
  *
  * This is half of every square's accessible name, and it is the part that decides
  * whether a board is usable without sight of it, so an unknown piece type falls
- * through to its own symbol rather than to a blank or an exception.
+ * through to its own symbol rather than to a blank or an exception. Which is also
+ * why the artwork is not what names a piece: an `<img>` whose `alt` is the only
+ * name would be announcing a filename.
  */
-export function pieceLabel(piece: { type: string; color: string }): string {
-  const color = piece.color === 'w' ? 'white' : 'black';
-  return `${color} ${NAMES[piece.type] ?? piece.type}`;
+export function pieceLabel(piece: PieceLike): string {
+  const colour = isSide(piece.color) ? (piece.color === 'w' ? 'white' : 'black') : 'black';
+  return `${colour} ${isPieceType(piece.type) ? NAMES[piece.type] : piece.type}`;
 }
