@@ -567,7 +567,10 @@ describe('EngineClient', () => {
       w.emit('bestmove e2e4');
       const r = await p;
 
-      expect(r).toEqual({ bestMove: 'e2e4', lines: [], depth: 0 });
+      // `aborted: false` because nothing interrupted it. An empty result is also
+      // what an *interrupted* search looks like, and this flag is the only thing
+      // that tells the two apart.
+      expect(r).toEqual({ bestMove: 'e2e4', lines: [], depth: 0, aborted: false });
       c.dispose();
     });
   });
@@ -1202,6 +1205,100 @@ describe('EngineClient', () => {
         retryable: true,
         message: 'Engine worker error',
       });
+      c.dispose();
+    });
+  });
+
+  /**
+   * `interrupt()` is the client's own abort, and its contract is mostly about what
+   * it must NOT do. The engine reads commands only between searches, so a `go`
+   * posted before the previous search's `bestmove` kills the 19-lite worker —
+   * measured in Chromium against the real WASM, with no app involved. That is why
+   * the replacement search belongs to the caller's queue and not to this method,
+   * and these tests are as much about the absence of a `go` as about the `stop`.
+   */
+  describe('interrupt', () => {
+    it('resolves the search in flight well under its movetime, flagged aborted', async () => {
+      const c = new EngineClient();
+      // A budget the suite could not wait out: if `interrupt()` did not resolve
+      // this search, the only thing that could end it is the 40s timeout.
+      const { p, w } = await boot(c, { movetimeMs: 30_000 });
+      const mark = w.mark();
+
+      c.interrupt();
+      await expect(w.waitForSent(/^stop$/)).resolves.toBe('stop');
+      // No `go` may appear between the `stop` and the engine's acknowledgement.
+      // This is the line the real engine dies on.
+      expect(w.sentMatching(MOVETIME)).toHaveLength(1);
+      // The real engine answers a `stop` with `bestmove (none)` and no `info` at
+      // all, which is why the result has to say it was interrupted.
+      w.emit('bestmove (none)');
+
+      const settled = await Promise.race([
+        p.then(() => 'settled' as const),
+        new Promise<'still running'>((r) => setTimeout(() => r('still running'), 1000)),
+      ]);
+      expect(settled).toBe('settled');
+      await expect(p).resolves.toMatchObject({ bestMove: null, lines: [], depth: 0, aborted: true });
+      expect(w.sentMatching(MOVETIME)).toHaveLength(1);
+
+      // And the client is usable again: the next search is a normal one, answered
+      // normally, and is not itself branded as interrupted.
+      const second = c.search(MATE_FEN, { movetimeMs: 50 });
+      swallow(second);
+      await w.waitForSentSince(mark, MOVETIME);
+      w.emit('info depth 10 multipv 1 score cp 12 pv d1h5');
+      w.emit('bestmove d1h5');
+      await expect(second).resolves.toMatchObject({ bestMove: 'd1h5', aborted: false });
+      c.dispose();
+    });
+
+    it('does not reject the search it interrupted', async () => {
+      // The abort is something the caller asked for. Rejecting it would make
+      // `analyze` throw a failure the caller did not cause and cannot act on.
+      const c = new EngineClient();
+      const { p, w } = await boot(c, { movetimeMs: 30_000 });
+      c.interrupt();
+      w.emit('bestmove (none)');
+
+      await expect(p).resolves.toBeDefined();
+      c.dispose();
+    });
+
+    it('a stop with nothing running builds no worker and brands nothing', async () => {
+      const c = new EngineClient();
+      const before = FakeWorker.created;
+
+      c.interrupt();
+
+      // No worker exists yet, and an interrupt is not a reason to create one.
+      expect(FakeWorker.created).toBe(before);
+      const { p, w } = await boot(c, { movetimeMs: 50 });
+      w.emit('bestmove e2e4');
+
+      // The engine ignores a `stop` it was not searching under, so it sends no
+      // `bestmove` of its own — and the next search must not be treated as
+      // interrupted by one that never happened.
+      await expect(p).resolves.toMatchObject({ aborted: false });
+      c.dispose();
+    });
+
+    it('an interrupted search leaves the client ready for the next one', async () => {
+      const c = new EngineClient();
+      const seen: string[] = [];
+      c.onStatus((s) => seen.push(s));
+      const { p, w } = await boot(c, { movetimeMs: 30_000 });
+
+      c.interrupt();
+      w.emit('bestmove (none)');
+      await p;
+
+      // `ready`, not `error`: an interrupted search is not a failure, and a badge
+      // that claimed the engine had died would send the learner looking for a
+      // problem that does not exist.
+      expect(seen.at(-1)).toBe('ready');
+      expect(c.status).toBe('ready');
+      expect(c.error).toBeNull();
       c.dispose();
     });
   });

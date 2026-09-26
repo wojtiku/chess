@@ -16,7 +16,7 @@
 //    that side is mated in |N|. `pickHint` puts the two on one scale before
 //    comparing them; `classify` keeps them apart and decides mate cases first.
 
-import { RETRYABLE_ENGINE_CODES } from '../engine/engineClient';
+import { EngineError, RETRYABLE_ENGINE_CODES } from '../engine/engineClient';
 import type { PvLine, SearchResult } from '../engine/engineClient';
 import { AnalysisCache } from './cache';
 
@@ -133,6 +133,17 @@ export function makeEngineSource(client: EngineLike, options: EngineSourceOption
           // If this throws, the error surfaces to the caller unchanged: the
           // second attempt has no further retry of its own.
           result = await search();
+        }
+
+        // An interrupted search is not an evaluation of anything. The engine
+        // answers a `stop` with `bestmove (none)` and no `info` line, so `lines`
+        // is empty and `depth` is 0 — and caching that would poison this FEN for
+        // the rest of the session: the bar would sit at 50/50 and every later hint
+        // for the position would find no line to offer, with nothing to retry and
+        // no way back. So it is refused before anything is built, and the next
+        // request for this position searches for real.
+        if (result.aborted) {
+          throw new EngineError('aborted', 'Search interrupted by a newer request');
         }
 
         const top = result.lines[0];

@@ -267,10 +267,13 @@ export function useGame(): GameApi {
    *    state is the client appearing — and that first run returns above, before it
    *    could ask anything.
    *
-   * What actually keeps a duplicate move off the board is therefore the door (one
-   * search at a time) and the reducer (a move that does not apply to the live
-   * position is refused). Neither is a guard *here*, and a condition that cannot
-   * change an outcome is not a guard.
+   * What actually keeps a *duplicate* move off the board is the door (one search at
+   * a time) and the reducer (a move that does not apply to the live position is
+   * refused). Neither is a guard *here*, and a condition that cannot change an
+   * outcome is not a guard. What keeps a *stale* one off the board is the position
+   * check above, which is not redundant with either: the reducer accepts a move that
+   * is legal in the new position, which is exactly the case a learner reaches by
+   * undoing and trying something else.
    */
   useEffect(() => {
     if (!playable || learnerToMove || snapshot.moves.length === 0) return;
@@ -290,6 +293,15 @@ export function useGame(): GameApi {
         if (best === null) return;
         await sleep(thinkWaitMs(performance.now() - started, settingsRef.current.minThinkTimeMs));
         if (!aliveRef.current) return;
+        // The position this answer belongs to, checked against the one on screen.
+        // Undo and then play something else is an ordinary thing for a learner to
+        // do, and the window is the reply's own duration wide — and the stale
+        // answer is not necessarily illegal in the new position, so the reducer
+        // will not catch it. A learner who made one move would be answered by a
+        // decision made for a board that is no longer there. The same check the
+        // hint and the evaluation both make, and the reason this one is the third
+        // rather than the only is that it is the only one that moves a piece.
+        if (fenRef.current !== askedFor) return;
         dispatch({ type: 'playUci', uci: best });
       } catch {
         // The engine owns its own failure state and the badge reports it. An

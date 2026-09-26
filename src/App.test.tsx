@@ -66,6 +66,8 @@ class FakeWorker {
   static sent: string[] = [];
   /** How many searches the app has started. */
   static searches = 0;
+  /** How many `stop`s the engine was sent: one per search the app gave up on. */
+  static stops = 0;
   /** The most searches ever in flight at the same moment. The real 19-lite WASM
    *  engine *dies* if a second `go` is posted while one is running — measured, not
    *  assumed — so this is the invariant the wiring has to keep, and it is
@@ -83,6 +85,8 @@ class FakeWorker {
   private readonly registered = new Map<string, (ev: never) => void>();
   private alive = true;
   private fen = START_FEN;
+  /** The pending answer, so `stop` can replace it with `bestmove (none)`. */
+  private answerTimer: ReturnType<typeof setTimeout> | undefined = undefined;
 
   constructor(readonly url: string) {
     FakeWorker.instances.push(this);
@@ -126,12 +130,30 @@ class FakeWorker {
         );
       }
       this.answer();
+      return;
     }
-    // `ucinewgame`, `setoption`, `stop` and `quit` are recorded and unanswered.
+    if (line === 'stop') {
+      FakeWorker.stops += 1;
+      // What the real engine does with a `stop`: end the search in flight, answer
+      // `bestmove (none)`, and send no `info` line at all. A fake that ignored
+      // `stop` would leave an interrupted search hanging until its budget ran out,
+      // and every test of the abort would be measuring the timeout instead.
+      this.abort();
+    }
+    // `ucinewgame`, `setoption` and `quit` are recorded and unanswered.
+  }
+
+  /** The `stop` answer: no lines, no score, no move. */
+  private abort(): void {
+    if (this.answerTimer === undefined) return;
+    this.cancelAnswer();
+    if (this.alive) FakeWorker.inFlightSearches -= 1;
+    this.say('bestmove (none)');
   }
 
   terminate(): void {
     this.alive = false;
+    this.cancelAnswer();
   }
 
   /** What `Worker.onerror` looks like to the client: a dead worker mid-life. */
@@ -142,11 +164,20 @@ class FakeWorker {
   private answer(): void {
     const move = this.pickMove();
     const score = FakeWorker.scores[this.fen] ?? FakeWorker.scoreCp;
-    setTimeout(() => {
+    this.answerTimer = setTimeout(() => {
+      this.answerTimer = undefined;
       if (this.alive) FakeWorker.inFlightSearches -= 1;
       this.say(`info depth 12 multipv 1 score cp ${score} pv ${move}`);
       this.say(`bestmove ${move}`);
     }, this.fen === FakeWorker.slowFen ? FakeWorker.slowMs : FakeWorker.searchDelayMs);
+  }
+
+  /** The engine never answers a search twice, so a cancelled answer is dropped
+   * rather than left to arrive after the `stop` that replaced it. */
+  private cancelAnswer(): void {
+    if (this.answerTimer === undefined) return;
+    clearTimeout(this.answerTimer);
+    this.answerTimer = undefined;
   }
 
   private pickMove(): string {
@@ -182,6 +213,7 @@ function resetEngine(): void {
   FakeWorker.play = {};
   FakeWorker.sent = [];
   FakeWorker.searches = 0;
+  FakeWorker.stops = 0;
   FakeWorker.inFlightSearches = 0;
   FakeWorker.maxConcurrentSearches = 0;
   FakeWorker.instances = [];
@@ -264,9 +296,11 @@ describe('App', () => {
     expect(screen.getByTestId('eval-bar')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Beginner' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Hint' })).toBeInTheDocument();
-    // The first search is issued from the mount effect, so the engine is already
-    // on its way to loading by the time `render` returns.
-    expect(screen.getByText('Loading engine…')).toBeInTheDocument();
+    // 'Not loaded' and not 'Loading engine…': the client exists from the mount
+    // effect, but the search is handed to it on a microtask (the queue defers the
+    // task so a synchronous throw cannot wedge the door), so at the end of `render`
+    // it has not started. The transition to loading is the next test's subject.
+    expect(screen.getByText('Engine not loaded')).toBeInTheDocument();
   });
 
   it('brings the engine up to ready', async () => {
@@ -288,43 +322,33 @@ describe('App', () => {
     await waitFor(() => expect(moves()).toEqual(['e4', 'Nc6']), { timeout: 5000 });
   });
 
-  it('waits for the evaluation in flight, then has the engine to itself', async () => {
+  it('abandons the evaluation in flight rather than queueing behind it', async () => {
     const user = userEvent.setup();
     storeSettings({ minThinkTimeMs: 0 });
-    // The opening evaluation is slow, and so is every search after it, which
-    // leaves a clear window in between: the opening's answer has landed and the
-    // engine has not answered the move yet. That window is where a stale write
-    // would be visible.
+    // The opening evaluation is slow, so it is certainly still running when the
+    // learner moves — which is the ordinary case, and the one in which waiting for
+    // it puts the opponent's move behind a 3s background search. Measured against
+    // the real engine, that wait was most of a reply's latency.
     FakeWorker.slowFen = after();
-    FakeWorker.slowMs = 700;
-    FakeWorker.searchDelayMs = 400;
+    FakeWorker.slowMs = 3000;
     render(<App />);
     await waitFor(() => expect(FakeWorker.searches).toBe(1));
-    const before = FakeWorker.searches;
-    // The positive control for the assertions below: that search really is running.
+    // The positive control: that search really is running.
     expect(FakeWorker.inFlightSearches).toBe(1);
 
     await play(user, 'e2', 'e4');
 
-    // Nothing is asked while that search runs. This is the assertion the real
-    // engine forced: a second `go` posted into a running search kills the worker,
-    // and the opponent's reply dies with it.
-    expect(FakeWorker.searches).toBe(before);
-    expect(FakeWorker.inFlightSearches).toBe(1);
-
-    // The opening's answer lands in here, and the bar is level rather than wrong:
-    // that score is White's, and the position on screen now has Black to move, so
-    // showing it would point the bar the wrong way for as long as the reply takes.
-    await act(async () => {
-      await sleep(900);
-    });
-    expect(moves()).toEqual(['e4']);
+    // Level, not wrong: the opening's score is White's, and the position on screen
+    // now has Black to move, so showing it would point the bar the wrong way.
     expect(evalShare()).toBe('50');
-
-    await waitFor(() => expect(moves()).toEqual(['e4', 'Nc6']), { timeout: 5000 });
-    // The reply, and then the evaluation of the position the reply created.
-    expect(FakeWorker.searches).toBe(before + 2);
+    // The reply arrives well inside the evaluation's 3s budget, because it asked for
+    // that evaluation to stop rather than waiting for it.
+    await waitFor(() => expect(moves()).toEqual(['e4', 'Nc6']), { timeout: 1500 });
+    // And still one `go` at a time: the abort replaced the search, it did not
+    // accompany it.
     expect(FakeWorker.maxConcurrentSearches).toBe(1);
+    // The abandoned evaluation left nothing behind, so the bar fills in again for
+    // the position the reply created.
     await waitFor(() => expect(evalShare()).toBe('51'), { timeout: 3000 });
   });
 
@@ -383,6 +407,33 @@ describe('App', () => {
     expect(FakeWorker.maxConcurrentSearches).toBe(1);
   });
 
+  it('does not play a reply decided for a position the learner has left', async () => {
+    const user = userEvent.setup();
+    // A think floor long enough that the undo and the second move both land
+    // while the engine's answer is being held back. That window is the reply's own
+    // duration wide, and it is the one in which a decision made for a position that
+    // is no longer on the board can still be dispatched.
+    storeSettings({ minThinkTimeMs: 600 });
+    // `d7d5` is legal after 1.e4 — the position the engine is asked about — and
+    // equally legal after 1.d4. So a reply decided for the abandoned position is
+    // not refused by the reducer; it simply appears on the board, and the learner
+    // has made one move and been answered about a different one.
+    FakeWorker.play = { [after('e2e4')]: 'd7d5' };
+    render(<App />);
+
+    await play(user, 'e2', 'e4');
+    await act(async () => {
+      await sleep(150);
+    });
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    await play(user, 'd2', 'd4');
+
+    await waitFor(() => expect(moves()).toHaveLength(2), { timeout: 5000 });
+    // The engine answers the position actually on the board, and the abandoned
+    // `d5` is nowhere in the list.
+    expect(moves()).toEqual(['d4', 'Nc6']);
+  });
+
   it('undo takes back the pair and hands the turn back', async () => {
     const user = userEvent.setup();
     storeSettings({ minThinkTimeMs: 0 });
@@ -393,8 +444,10 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Undo' }));
 
     expect(moves()).toEqual([]);
-    // The board is interactive again, which is what "your turn" means here.
-    expect(square('e2')).toBeEnabled();
+    // "Your turn again", asserted by what the board offers: `Board` never renders
+    // `disabled` on a square, so `toBeEnabled` on one proves nothing.
+    await user.click(square('e2'));
+    expect(square('e4')).toHaveAttribute('data-target');
   });
 
   it('does not move for the engine in a game that has ended', async () => {
@@ -466,6 +519,44 @@ describe('App', () => {
     expect(evalShare()).toBe('51');
   });
 
+  it('the bar shows the position on screen after a rapid back and forth', async () => {
+    // The property, not a single line of code: whatever order the queue and the
+    // position check between them produce, the number on the bar belongs to the
+    // position the learner is looking at. Rapid review navigation is the case that
+    // stresses it — a position whose evaluation is still in flight, one queued
+    // behind it, and then the learner back at the first — with two different
+    // scores so a stale write is visible rather than merely out of order.
+    //
+    // What this does NOT do is pin the position check on its own. The
+    // `eval-drops-the-position-check` mutation survives it, and the traced reason is
+    // in the report: with the door, every path where the evaluation declines to ask
+    // about a new position coincides with the in-flight one being aborted or
+    // failed, so the check has no reachable case left that ordering does not
+    // already cover.
+    const user = userEvent.setup();
+    storeSettings({ minThinkTimeMs: 0 });
+    // Ply 1 is slow to analyse and scores differently, so the two writes are
+    // distinguishable rather than merely ordered.
+    FakeWorker.slowFen = after('e2e4');
+    FakeWorker.scores = { [after('e2e4')]: -900 };
+    render(<App />);
+    await play(user, 'e2', 'e4');
+    await waitFor(() => expect(moves()).toEqual(['e4', 'Nc6']), { timeout: 5000 });
+    // The live position's own evaluation, which is the one that gets queued below.
+    await waitFor(() => expect(evalShare()).toBe('51'), { timeout: 3000 });
+
+    await user.click(moveButton('e4')); // A: a slow search for the ply-1 position
+    await user.click(screen.getByRole('button', { name: 'Last move' })); // B: queued
+    await user.click(moveButton('e4')); // back to A, which joins A's own search
+
+    // A resolves, then B. The bar settles on A's score: -900 for the side to move
+    // there is +900 for White, so 91 — and 51 is B's, which would be stale.
+    await act(async () => {
+      await sleep(FakeWorker.slowMs + 300);
+    });
+    expect(evalShare()).toBe('91');
+  });
+
   it('shows the pieces each side has taken', async () => {
     // `Captured` reads `move.captured` out of the move history, so a caller that
     // handed it a FEN-loaded position would report a correct material difference
@@ -493,7 +584,11 @@ describe('App', () => {
 
     expect(screen.getByText('Resigned — Black wins')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Resign' })).toBeDisabled();
-    expect(square('e2')).toBeEnabled();
+    // A finished game takes no moves, and the board says so by offering no
+    // destination — the opposite polarity to the two tests above, and the reason
+    // `toBeEnabled` on a square was worthless: it was true in both states.
+    await user.click(square('e2'));
+    expect(square('e4')).not.toHaveAttribute('data-target');
   });
 
   it('keeps a resignation made before the first move across a reload', async () => {
@@ -523,7 +618,8 @@ describe('App', () => {
     expect(FakeWorker.searches).toBe(0);
   });
 
-  it('restores a persisted game on reload', () => {
+  it('restores a persisted game on reload', async () => {
+    const user = userEvent.setup();
     storeGame([
       { from: 'd2', to: 'd4' },
       { from: 'd7', to: 'd5' },
@@ -531,7 +627,11 @@ describe('App', () => {
     render(<App />);
 
     expect(moves()).toEqual(['d4', 'd5']);
-    expect(square('d2')).toBeEnabled();
+    // Two plies on, so it is the learner's move — asserted by what the board
+    // *offers*, not by `toBeEnabled`: `Board` never renders `disabled` on a square,
+    // so that assertion could not fail whatever the turn was.
+    await user.click(square('g1'));
+    expect(square('f3')).toHaveAttribute('data-target');
   });
 
   it('answers for a restored game that is the opponent’s turn', async () => {
@@ -750,6 +850,11 @@ describe('App', () => {
     // Fool's mate, with both replies pinned to the move the ending needs rather
     // than to whatever the first legal move happens to be.
     FakeWorker.play = { [after('f2f3')]: 'e7e5', [after('f2f3', 'e7e5', 'g2g4')]: 'd8h4' };
+    // The evaluation of the position *before* the mate is slow, and nothing will
+    // interrupt it: the game ends, so no reply is owed and the evaluation is
+    // gated off. It is the one window in which an answer for a position that is no
+    // longer on screen can still arrive, and the bar must refuse it.
+    FakeWorker.slowFen = after('f2f3', 'e7e5');
     render(<App />);
 
     await play(user, 'f2', 'f3');
@@ -760,12 +865,16 @@ describe('App', () => {
     expect(screen.getByText('Checkmate — Black wins')).toBeInTheDocument();
     const searchesAfterMate = FakeWorker.searches;
     // A finished game is terminal: the engine is not asked for a reply in a
-    // position with no legal move in it, and the board takes none.
+    // position with no legal move in it, and the board takes none. The wait runs
+    // past the slow evaluation so that its answer arrives inside the assertions.
     await act(async () => {
-      await sleep(50);
+      await sleep(FakeWorker.slowMs + 200);
     });
     expect(FakeWorker.searches).toBe(searchesAfterMate);
     expect(moves()).toHaveLength(4);
+    // Level rather than showing the pre-mate position's score: the mate moved the
+    // board, and that score is for a position that is no longer on screen.
+    expect(evalShare()).toBe('50');
   });
 
   it('degrades to a local two-player game when the engine dies', async () => {
@@ -887,12 +996,16 @@ describe('useGame', () => {
     const before = FakeWorker.searches;
 
     act(() => api().play({ from: 'e2', to: 'e4' }));
-
-    // One search for the reply. Two would mean a second effect run started its
-    // own, and the first run's answer was thrown away with the work it belonged to
-    // — the reply then never lands.
-    expect(FakeWorker.searches).toBe(before + 1);
     await waitFor(() => expect(api().snapshot.moves).toHaveLength(2), { timeout: 5000 });
+    // A second effect run would have asked again, and its move would be the third
+    // ply. Nothing settles it, so a moment later is the only honest moment to look.
+    await act(async () => {
+      await sleep(50);
+    });
+    expect(api().snapshot.moves).toHaveLength(2);
+    // The opening evaluation and the reply: one search each, never two at once.
+    expect(FakeWorker.searches).toBe(before + 2);
+    expect(FakeWorker.maxConcurrentSearches).toBe(1);
   });
 
   it('answers a restored game that is the engine’s turn exactly once, under StrictMode', async () => {
@@ -941,12 +1054,16 @@ describe('useGame', () => {
     await waitFor(() => expect(result.current.snapshot.moves).toHaveLength(2), { timeout: 5000 });
   });
 
-  it('asks again for a position it has already answered once', async () => {
-    // The reply is deduped per game state, not per position. Undo and play the
-    // same move again reaches a position the engine has already answered, and a
-    // position-keyed guard would refuse to ask — leaving the board on the
-    // opponent's turn with nothing able to move.
+  it('asks again for a position it has already answered once, abandoning the old search', async () => {
+    // Two things, and the second is the one the door used to get wrong. The reply is
+    // deduped per game state, not per position: undo and play the same move again
+    // reaches a position the engine has already answered, and a position-keyed guard
+    // would refuse to ask, leaving the board on the opponent's turn with nothing
+    // able to move. And the *new* reply must not sit behind the abandoned one —
+    // measured at 1409ms for a reply against a 400ms engine, i.e. two searches and
+    // two think floors for one move. A `stop` is how it does not.
     storeSettings({ minThinkTimeMs: 0 });
+    FakeWorker.searchDelayMs = 400;
     const { result } = mount();
     act(() => result.current.play({ from: 'e2', to: 'e4' }));
     await waitFor(() => expect(result.current.snapshot.moves).toHaveLength(2), { timeout: 5000 });
@@ -955,8 +1072,16 @@ describe('useGame', () => {
     expect(result.current.snapshot.moves).toHaveLength(0);
     act(() => result.current.play({ from: 'e2', to: 'e4' }));
 
+    // What is in flight at this moment is the *evaluation* of the position the
+    // learner just left, and it is stopped rather than waited out: the whole cost
+    // of a turn-back-and-replay used to be that search plus a second think floor.
+    expect(FakeWorker.stops).toBe(1);
     await waitFor(() => expect(result.current.snapshot.moves).toHaveLength(2), { timeout: 5000 });
     expect(result.current.snapshot.moves.map((m) => m.san)).toEqual(['e4', 'Nc6']);
+    // And nothing else was interrupted: the search that answered was the one asked
+    // for, and the engine is left running.
+    expect(FakeWorker.stops).toBe(1);
+    expect(result.current.engineStatus).not.toBe('error');
   });
 
   it('drops a hint for a position the learner has left', async () => {
@@ -997,6 +1122,8 @@ describe('useGame', () => {
     act(() => result.current.play({ from: 'e2', to: 'e4' }));
     expect(result.current.snapshot.moves).toHaveLength(1);
     expect(result.current.playerTurn).toBe(false);
+    // The reply's own search, so the count below is not racing the queue.
+    await waitFor(() => expect(FakeWorker.searches).toBe(1));
     const searches = FakeWorker.searches;
 
     await act(async () => {

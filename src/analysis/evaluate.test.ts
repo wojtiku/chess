@@ -10,8 +10,13 @@ import {
 // "recreate and retry once, second failure surfaces an error" rule is the whole
 // reason this module sits between the engine and the UI.
 
+// `aborted: false` is the shape every search that was *answered* has. It is written
+// out rather than defaulted, so a test that means to exercise an interrupted search
+// has to say so — the alternative is a helper that invents the answer to a question
+// the test did not ask.
 const SEARCH = (r: Partial<SearchResult>): SearchResult => ({
-  bestMove: 'e2e4', lines: [{ uci: 'e2e4', scoreCp: 30, depth: 18, pv: ['e2e4'] }], depth: 18, ...r,
+  bestMove: 'e2e4', lines: [{ uci: 'e2e4', scoreCp: 30, depth: 18, pv: ['e2e4'] }], depth: 18,
+  aborted: false, ...r,
 });
 
 const FIVE_LINES: SearchResult['lines'] = [
@@ -85,6 +90,36 @@ describe('makeEngineSource', () => {
     await expect(src.analyze('fen-c')).rejects.toThrow('engine down');
     await expect(src.analyze('fen-c')).rejects.toThrow('engine down');
     expect(n).toBe(2);
+  });
+
+  it('never caches an interrupted search, and searches again next time', async () => {
+    // The trap `SearchResult.aborted` exists for. An interrupted search answers
+    // `bestmove (none)` with no `info` line, so it looks exactly like "this
+    // position has no lines" — and the analysis above deliberately *does* cache a
+    // genuinely empty answer, because "no move" is an answer. Caching this one
+    // would therefore poison the FEN for the rest of the session: the bar would sit
+    // at 50/50 and every later hint for the position would find no line to offer,
+    // with no error and nothing to retry.
+    let calls = 0;
+    const src = makeEngineSource({
+      search: async () => {
+        calls += 1;
+        return calls === 1
+          ? SEARCH({ bestMove: null, lines: [], depth: 0, aborted: true })
+          : SEARCH({});
+      },
+    });
+
+    await expect(src.analyze('fen-interrupted')).rejects.toMatchObject({ code: 'aborted' });
+    // Not retried behind the caller's back: the abort was asked for, and the
+    // request that asked for it is doing the work instead.
+    expect(calls).toBe(1);
+
+    // The next request for the same position is a real search, and it has lines.
+    const a = await src.analyze('fen-interrupted');
+    expect(calls).toBe(2);
+    expect(a.lines).toHaveLength(1);
+    expect(a.scoreCp).toBe(30);
   });
 
   it('caches an empty analysis, because "no move" is an answer', async () => {

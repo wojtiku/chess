@@ -19,9 +19,10 @@
 //    stayed `idle` would leave the board unplayable on Black's turn with no badge
 //    to explain why.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { EngineClient, EngineError, type EngineStatus } from '../engine/engineClient';
 import { makeEngineSource, type Analysis } from '../analysis/evaluate';
+import { createSearchQueue } from './searchQueue';
 
 export interface EngineApi {
   /**
@@ -77,60 +78,25 @@ interface Door {
 }
 
 /**
- * One `go` outstanding at a time, with a move ahead of an evaluation.
+ * The client, wrapped in the one policy its callers must not each decide.
  *
- * This is not politeness towards the engine, and it is not the `superseded`
- * bookkeeping `EngineClient` already does. Superseding rejects the older
- * *promise*; it does not stop the older *search*. The engine finishes what it was
- * doing and only then reads the `position` and `go` that were posted in the
- * meantime — and against the real 19-lite WASM build in Chromium, a second `go`
- * posted into a running search **kills the worker**: measured during this task,
- * a fourth ply killed it with `Engine worker error` and the opponent's reply went
- * with it, leaving the board on Black's turn with nothing able to move.
- *
- * So the invariant is not "one answer at a time" but "one search in flight", and
- * only the caller can keep it: the client answers one question at a time, and three
- * callers in this app ask it things.
- *
- * Two lanes rather than one queue, because a 3s evaluation must not stand between
- * the learner and the opponent's move. A move goes to the front, so it starts as
- * soon as the current search ends; an evaluation waits its turn. Nothing is
- * cancelled — the running search cannot be — so a move that arrives during one
- * waits for it, and that wait is bounded by the budget of the search in flight.
+ * The scheduling itself lives in `./searchQueue`, next to the measurements that
+ * justify it. What is added here is the mapping from *who is asking* to *how
+ * urgent this is*, which is a fact about the app rather than about engines — and
+ * the one that needs stating: a reply or a new game outranks a background
+ * evaluation, an evaluation never interrupts anything, and the replacement search
+ * is posted by the queue after the aborted one has settled, never from here.
  */
 function openDoor(client: EngineClient): Door {
   const source = makeEngineSource(client);
-  /** Requests not yet handed to the client, oldest first within a lane. */
-  const waiting: Array<() => void> = [];
-  let busy = false;
-
-  const pump = (): void => {
-    if (busy) return;
-    const next = waiting.shift();
-    // Nothing to start: a later `enqueue` comes through this same door.
-    if (next === undefined) return;
-    busy = true;
-    next();
-  };
-
-  const enqueue = <T,>(task: () => Promise<T>, urgent: boolean): Promise<T> =>
-    new Promise<T>((resolve, reject) => {
-      const slot = (): void => {
-        task().then(resolve, reject).finally(() => {
-          busy = false;
-          pump();
-        });
-      };
-      if (urgent) waiting.unshift(slot);
-      else waiting.push(slot);
-      pump();
-    });
+  const queue = createSearchQueue(() => client.interrupt());
 
   return {
-    analyze: (fen, opts) => enqueue(() => source.analyze(fen, opts), false),
+    analyze: (fen, opts) => queue.enqueue(() => source.analyze(fen, opts), false),
     // `search` rather than `analyze`: the reply needs the `bestmove` line, and
     // `Analysis` deliberately models an evaluation, not a move.
-    bestMove: (fen, movetimeMs) => enqueue(async () => (await client.search(fen, { movetimeMs })).bestMove, true),
+    bestMove: (fen, movetimeMs) =>
+      queue.enqueue(async () => (await client.search(fen, { movetimeMs })).bestMove, true),
     setSkillLevel: (n) => {
       // Never rejects in practice, and never needs to: a failure here is an
       // option the engine did not take, and the next `ucinewgame` re-sends it.
@@ -139,7 +105,7 @@ function openDoor(client: EngineClient): Door {
       void client.setSkillLevel(n).catch(ignore);
     },
     newGame: () =>
-      enqueue(
+      queue.enqueue(
         () =>
           client.newGame().catch((e: unknown) => {
             // `dispose` rejects a newGame in flight, and that is a normal unmount

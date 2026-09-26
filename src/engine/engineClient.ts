@@ -19,6 +19,19 @@ export interface SearchResult {
   bestMove: string | null;
   lines: PvLine[];
   depth: number;
+  /**
+   * Whether this search was abandoned by `interrupt()` rather than answered.
+   *
+   * The two are not the same answer, and treating them as one is expensive: a
+   * `stop` a few milliseconds into a `go` makes the engine reply
+   * `bestmove (none)` with no `info` line at all, so an aborted result carries
+   * **no lines and no score**. A caller that stores it — `makeEngineSource` keys
+   * its cache on FEN and options — has then cached an empty evaluation for that
+   * position, and every later request for it is served that emptiness with no way
+   * to recover. So the flag is on the result, where the caching decision is made,
+   * and not merely on the client where the abort happened.
+   */
+  aborted: boolean;
 }
 
 /** A silent worker (bad WASM path, blocked, dead) is a boot failure, not a
@@ -43,6 +56,7 @@ const FAILURE_CODES = [
   'handshake-timeout',
   'timeout',
   'superseded',
+  'aborted',
   'disposed',
 ] as const;
 
@@ -50,8 +64,9 @@ const FAILURE_CODES = [
  *
  * `worker-died` and `handshake-timeout` are the engine being unavailable, which
  * is the one case where re-issuing the request is sensible. `superseded` means
- * the caller itself moved on, and `disposed` means the client is gone; retrying
- * either would be wrong. `timeout` is deliberately **not** retryable: the budget
+ * the caller itself moved on, `aborted` means the caller interrupted this search
+ * deliberately, and `disposed` means the client is gone; retrying any of the
+ * three would be wrong. `timeout` is deliberately **not** retryable: the budget
  * is a hard cap by design, the client has already thrown the worker away, and a
  * machine slow enough to blow `movetime + 10s` once will do it again — the
  * caller is better served by an error it can show than by a silent second wait
@@ -101,6 +116,10 @@ interface PendingSearch {
    * a replacement. */
   worker: Worker;
   lines: Map<number, PvLine>;
+  /** Set by `interrupt()`. Lives on the search rather than on the client so it
+   * cannot outlive the request it describes: a new search starts un-aborted, and
+   * an abort asked for while nothing was running has nothing to mark. */
+  aborted: boolean;
   resolve: (r: SearchResult) => void;
   reject: (e: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -275,7 +294,51 @@ export class EngineClient {
       .sort((a, b) => a[0] - b[0])
       .map(([, line]) => line);
     const depth = lines.reduce((max, line) => Math.max(max, line.depth), 0);
-    p.resolve({ bestMove: move, lines, depth });
+    p.resolve({ bestMove: move, lines, depth, aborted: p.aborted });
+  }
+
+  /**
+   * Abandon the search in flight: `stop`, and nothing else.
+   *
+   * The engine's own abort, and the reason it is a separate method rather than an
+   * argument to `search` is that **the replacement must not come from here.** A
+   * `go` posted before the aborted search's `bestmove` has arrived kills the
+   * 19-lite worker outright — measured in Chromium against the real WASM, with no
+   * app involved: `go 3000` then `go 1500` 200ms later dies, two `go`s 20ms apart
+   * die, `stop` then `go` 0ms later dies, and a strictly sequential pair — the
+   * second `go` 150ms after the first `bestmove` — is clean. So the rule is not
+   * "don't overlap searches", it is "never post a `go` before the previous
+   * `bestmove`", and the only safe way to hold to it is for the caller to wait: this
+   * method returns immediately, the pending search resolves when the engine
+   * acknowledges the `stop`, and whatever asked for the interruption starts its own
+   * search then.
+   *
+   * Two things it deliberately does not do:
+   *
+   *  - it does not reject the pending search. The abort is something the caller
+   *    asked for, so turning it into a rejection would make `analyze` throw noise
+   *    the caller did not cause. The result resolves instead, with `aborted` set
+   *    and — the trap — **no lines**, which is why that flag is on `SearchResult`.
+   *  - it does not build a worker to stop. With none there is nothing to interrupt,
+   *    and a `stop` posted into a live search on purpose must not also be the thing
+   *    that creates an engine.
+   *
+   * A `stop` with nothing running is harmless: the engine ignores it and sends no
+   * `bestmove`, so there is no stray answer to settle an unrelated search.
+   */
+  interrupt(): void {
+    const w = this.worker;
+    if (w === null) return;
+    const p = this.pending;
+    if (p !== null) p.aborted = true;
+    try {
+      w.postMessage(cmd.stop());
+    } catch {
+      // A worker that cannot be posted to is a worker that is already gone, and
+      // `fail`/`dropWorker` are about to hear about it from somewhere else. The
+      // abort flag still stands, so the search that is in flight reports itself
+      // aborted rather than as an answer.
+    }
   }
 
   /** One failure path for every way the engine can let us down, so no promise is
@@ -428,6 +491,7 @@ export class EngineClient {
         id: ++this.nextSearchId,
         worker: w,
         lines: new Map(),
+        aborted: false,
         resolve,
         reject,
         timer: setTimeout(
