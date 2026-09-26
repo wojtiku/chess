@@ -13,6 +13,22 @@
 .difficulty-hint { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .difficulty-hint select { font: inherit; padding: 4px; border-radius: 6px;
   border: 1px solid var(--board-border); background: var(--panel-bg); color: inherit; }
-.difficulty-advanced { justify-self: start; font-size: 12px; background: none;
-  border: 0; color: var(--accent); cursor: pointer; padding: 0; text-decoration: underline; }
+
+/* The disclosure. `align-self: flex-start` rather than the `justify-self` it used
+   to carry, which does nothing in a flex column — the parent is `.difficulty`, and
+   an ignored alignment property is a comment that lies about the layout. */
+.difficulty-advanced { align-self: flex-start; display: inline-flex; align-items: baseline;
+  gap: 5px; font-size: 12px; background: none; border: 0; color: var(--accent);
+  cursor: pointer; padding: 0; text-decoration: underline; }
 .difficulty-advanced:focus-visible { outline: 2px solid var(--accent); }
+/* Decorative, so it must not carry the underline or the offset of the label it
+   sits beside — the text is the control. */
+.difficulty-caret { font-size: 10px; text-decoration: none; }
+
+/* The collapsed region gets a box, because the two halves of this control are not
+   the same kind of thing: five presets on one side, three adjustments on the
+   other. Without a boundary the sliders read as part of the preset row, and a
+   learner who opened the panel to check one thing has to work out which controls
+   it is looking at. */
+.difficulty-settings { display: flex; flex-direction: column; gap: 10px;
+  padding: 10px; border: 1px solid var(--board-border); border-radius: 8px; }

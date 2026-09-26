@@ -3,6 +3,12 @@
 // either control alone, so most of this file drives a *controlled* panel — one
 // that actually applies `onChange` — and asserts that the two views keep
 // agreeing after every interaction.
+//
+// **Almost everything now sits behind the settings disclosure**, so most tests
+// below have to open it before they can touch it. That is deliberate, not
+// incidental: a test that reached the sliders without opening the panel would be a
+// test of a control no learner can reach, and it would go on passing if the
+// disclosure were deleted outright.
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -15,6 +21,22 @@ const radio = (label: string) => screen.getByRole('radio', { name: label });
 
 const slider = (name: RegExp) =>
   screen.getByLabelText(name) as HTMLInputElement;
+
+/** The disclosure, by accessible name. The caret is `aria-hidden`, so the name is
+ *  just the text, and nothing else on screen contains "settings". */
+const settingsButton = (): HTMLElement => screen.getByRole('button', { name: /settings/i });
+
+/** Open the collapsed settings panel.
+ *
+ *  `userEvent` rather than `fireEvent` for the reason the "reports no change from a
+ *  real interaction while disabled" test spells out: a raw dispatch reaches a
+ *  control that the browser would refuse, so it fails on a correct panel and passes
+ *  on one whose handlers ignore `disabled`. The disclosure is never disabled today,
+ *  but that is a property of the props rather than of the element, and this is the
+ *  one line every test in the file depends on. */
+async function openSettings(): Promise<void> {
+  await userEvent.setup().click(settingsButton());
+}
 
 const bounds = (input: HTMLInputElement) => ({
   min: Number(input.getAttribute('min')),
@@ -70,13 +92,15 @@ describe('DifficultyControl', () => {
     }
   });
 
-  it('shows the strength as a preset name when the level is one, and Custom when it is not', () => {
+  it('shows the strength as a preset name when the level is one, and Custom when it is not', async () => {
     const { unmount } = render(<Controlled />);
+    await openSettings();
     expect(screen.getByText(`Engine strength: ${presetLabel(DEFAULT_SETTINGS.skillLevel)}`)).toBeInTheDocument();
     expect(screen.getByText('Engine strength: Medium')).toBeInTheDocument();
     unmount();
 
     render(<Controlled initial={{ ...DEFAULT_SETTINGS, skillLevel: 10 }} />);
+    await openSettings();
     expect(screen.getByText('Engine strength: Custom (10)')).toBeInTheDocument();
     // "Custom" is what makes the two views visibly one setting rather than two
     // independent controls that happen to sit next to each other.
@@ -85,6 +109,7 @@ describe('DifficultyControl', () => {
 
   it('snaps the raw slider to a preset when a preset is clicked', async () => {
     render(<Controlled />);
+    await openSettings();
     await userEvent.setup().click(radio('Hard'));
     expect(slider(/skill level/i).value).toBe('13');
     expect(screen.getByText('Engine strength: Hard')).toBeInTheDocument();
@@ -92,17 +117,19 @@ describe('DifficultyControl', () => {
     expect(radio('Medium')).toHaveAttribute('aria-checked', 'false');
   });
 
-  it('shows Custom and checks no preset when the raw slider moves off one', () => {
+  it('shows Custom and checks no preset when the raw slider moves off one', async () => {
     render(<Controlled />);
+    await openSettings();
     fireEvent.change(slider(/skill level/i), { target: { value: '10' } });
     expect(screen.getByText('Engine strength: Custom (10)')).toBeInTheDocument();
     expect(screen.getAllByRole('radio').every((b) => b.getAttribute('aria-checked') === 'false')).toBe(true);
   });
 
-  it('goes back to a preset name when the raw slider lands on one', () => {
+  it('goes back to a preset name when the raw slider lands on one', async () => {
     // The other direction of the same invariant: dragging 8 -> 10 -> 13 must not
     // leave the panel saying "Custom" once the level is a preset again.
     const { unmount } = render(<Controlled />);
+    await openSettings();
     const s = slider(/skill level/i);
     fireEvent.change(s, { target: { value: '10' } });
     expect(screen.getByText(/custom/i)).toBeInTheDocument();
@@ -113,12 +140,13 @@ describe('DifficultyControl', () => {
     unmount();
   });
 
-  it('keeps the slider and the checked preset in step for every level the slider can reach', () => {
+  it('keeps the slider and the checked preset in step for every level the slider can reach', async () => {
     // The invariant, walked exhaustively rather than sampled: for all 21 levels,
     // the checked preset is the one whose level equals the slider, and the label
     // agrees with both. A panel whose two views are computed from different
     // sources passes every spot check and fails here.
     render(<Controlled />);
+    await openSettings();
     const s = slider(/skill level/i);
     for (let level = 0; level <= 20; level++) {
       fireEvent.change(s, { target: { value: String(level) } });
@@ -131,9 +159,10 @@ describe('DifficultyControl', () => {
     }
   });
 
-  it('clamps the raw slider through clampSkill rather than re-deriving the bound', () => {
+  it('clamps the raw slider through clampSkill rather than re-deriving the bound', async () => {
     const onChange = vi.fn();
     render(<DifficultyControl settings={DEFAULT_SETTINGS} onChange={onChange} />);
+    await openSettings();
     // 25 is off the end of the input's own domain. The assertion that matters is the
     // VALUE the panel reports, not the clamp's own output — a version of this test
     // that only asserted `clampSkill(25) === 20` was a statement about the library.
@@ -150,9 +179,10 @@ describe('DifficultyControl', () => {
     expect(onChange).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, skillLevel: 20 });
   });
 
-  it('clamps the think-time slider through clampMinThink', () => {
+  it('clamps the think-time slider through clampMinThink', async () => {
     const onChange = vi.fn();
     render(<DifficultyControl settings={DEFAULT_SETTINGS} onChange={onChange} />);
+    await openSettings();
     fireEvent.change(slider(/minimum think time/i), { target: { value: '250' } });
     // 250ms is not a 100ms step, so the clamp rounds it: the slider must not be
     // able to store a value its own `step` could never produce.
@@ -160,12 +190,13 @@ describe('DifficultyControl', () => {
     expect(onChange).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, minThinkTimeMs: 300 });
   });
 
-  it('declares slider bounds that are exactly the clamp functions\' own domain', () => {
+  it('declares slider bounds that are exactly the clamp functions\' own domain', async () => {
     // `difficulty.ts` deliberately does not export its range constants, so the panel
     // writes its own `min`/`max`/`step`. This is the pin that keeps the two files
     // honest: the domain is discovered by probing the clamp, so a change to either
     // side fails here instead of producing a slider that lies about its range.
     render(<DifficultyControl settings={DEFAULT_SETTINGS} onChange={() => {}} />);
+    await openSettings();
     const skill = bounds(slider(/skill level/i));
     const think = bounds(slider(/minimum think time/i));
 
@@ -180,7 +211,7 @@ describe('DifficultyControl', () => {
     for (let v = think.min; v <= think.max; v += think.step) expect(clampMinThink(v), `think ${v}`).toBe(v);
   });
 
-  it('keeps the two views in step for settings that are not valid levels at all', () => {
+  it('keeps the two views in step for settings that are not valid levels at all', async () => {
     // Corrupt storage is the case `presetFor` exists for. `clampSkill(NaN)` is 8, so
     // the label says "Medium" and the row MUST highlight Medium; comparing the raw
     // level against the preset table instead — as the brief's sketch does —
@@ -198,6 +229,7 @@ describe('DifficultyControl', () => {
       const { unmount } = render(
         <DifficultyControl settings={{ ...DEFAULT_SETTINGS, skillLevel: level }} onChange={() => {}} />,
       );
+      await openSettings();
       expect(screen.getByText(`Engine strength: ${labelText}`), `level ${level}`).toBeInTheDocument();
       const checked = screen.getAllByRole('radio')
         .filter((b) => b.getAttribute('aria-checked') === 'true')
@@ -207,7 +239,7 @@ describe('DifficultyControl', () => {
     }
   });
 
-  it('displays a level the slider can actually show, and warns about nothing', () => {
+  it('displays a level the slider can actually show, and warns about nothing', async () => {
     // `value={NaN}` on a range input makes React log a warning and the browser's
     // sanitisation then displays the midpoint — so an unclamped panel would sit
     // there showing 10 beside a label reading "Medium", with a console full of
@@ -227,6 +259,7 @@ describe('DifficultyControl', () => {
           onChange={() => {}}
         />,
       );
+      await openSettings();
       expect(slider(/skill level/i)).toHaveValue(String(DEFAULT_SETTINGS.skillLevel));
       expect(slider(/minimum think time/i)).toHaveValue(String(DEFAULT_SETTINGS.minThinkTimeMs));
     } finally {
@@ -247,32 +280,38 @@ describe('DifficultyControl', () => {
     expect(onChange.mock.calls[0]?.[0]).not.toBe(settings);
   });
 
-  it('offers the hint modes behind a disclosure and reports the chosen one', async () => {
-    const user = userEvent.setup();
+  it('offers the hint modes inside the settings panel and reports the chosen one', async () => {
     const onChange = vi.fn();
     render(<DifficultyControl settings={DEFAULT_SETTINGS} onChange={onChange} />);
-    expect(screen.queryByLabelText(/hint/i)).not.toBeInTheDocument();
+    // One disclosure for all three adjustments now, rather than a second
+    // "Show hint options" button of its own — so the hint select is reached the
+    // same way the sliders are. The label is matched exactly enough to say
+    // "hint quality", because the app's Hint *button* is a group labelled "Hints"
+    // and a loose `/hint/i` would be a match for that too.
+    expect(screen.queryByLabelText(/hint quality/i)).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /hint/i }));
-    const select = screen.getByLabelText(/hint/i) as HTMLSelectElement;
+    await openSettings();
+    const select = screen.getByLabelText(/hint quality/i) as HTMLSelectElement;
     expect([...select.options].map((o) => o.value)).toEqual(['best', 'good']);
 
-    await user.selectOptions(select, 'good');
+    await userEvent.setup().selectOptions(select, 'good');
     expect(onChange).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, hintMode: 'good' });
   });
 
   it('reflects a hint mode chosen elsewhere', async () => {
     render(<Controlled initial={{ ...DEFAULT_SETTINGS, hintMode: 'good' }} />);
-    await userEvent.setup().click(screen.getByRole('button', { name: /hint/i }));
-    expect((screen.getByLabelText(/hint/i) as HTMLSelectElement).value).toBe('good');
+    await openSettings();
+    expect((screen.getByLabelText(/hint quality/i) as HTMLSelectElement).value).toBe('good');
   });
 
-  it('labels the think time it is showing, in words a learner can act on', () => {
+  it('labels the think time it is showing, in words a learner can act on', async () => {
     const { unmount } = render(<Controlled initial={{ ...DEFAULT_SETTINGS, minThinkTimeMs: 1200 }} />);
+    await openSettings();
     expect(slider(/minimum think time/i)).toHaveValue('1200');
     expect(screen.getByText(/1200\s*ms/)).toBeInTheDocument();
     unmount();
     render(<Controlled initial={{ ...DEFAULT_SETTINGS, minThinkTimeMs: 0 }} />);
+    await openSettings();
     expect(slider(/minimum think time/i)).toHaveValue('0');
   });
 
@@ -281,13 +320,13 @@ describe('DifficultyControl', () => {
     // mid-search would apply to the NEXT search only — the panel goes inert instead.
     render(<DifficultyControl settings={DEFAULT_SETTINGS} onChange={() => {}} disabled />);
     for (const b of screen.getAllByRole('radio')) expect(b).toBeDisabled();
+    await openSettings();
     expect(slider(/skill level/i)).toBeDisabled();
     expect(slider(/minimum think time/i)).toBeDisabled();
 
     // The disclosure is local view state, not a setting: hiding it while the panel
-    // is inert would make the select unreachable once the panel is live again.
-    await userEvent.setup().click(screen.getByRole('button', { name: /hint/i }));
-    expect(screen.getByLabelText(/hint/i)).toBeDisabled();
+    // is inert would make the adjustments unreachable once the panel is live again.
+    expect(screen.getByLabelText(/hint quality/i)).toBeDisabled();
   });
 
   it('reports no change from a real interaction while disabled', async () => {
@@ -299,28 +338,135 @@ describe('DifficultyControl', () => {
     const user = userEvent.setup();
     render(<DifficultyControl settings={DEFAULT_SETTINGS} onChange={onChange} disabled />);
     await user.click(radio('Expert'));
+    // Opening is deliberately NOT part of the no-change claim: the disclosure holds
+    // no setting, so clicking it reports nothing by design rather than by `disabled`.
+    await user.click(settingsButton());
     await user.click(slider(/skill level/i));
     await user.type(slider(/skill level/i), '{ArrowRight}');
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it('scopes the labels to one instance, so two panels cannot cross-wire', () => {
+  it('scopes the labels to one instance, so two panels cannot cross-wire', async () => {
     // `useId` is what keeps the `htmlFor`/`id` pair unique. React's ids contain
     // colons, which are legal in an id and in `htmlFor`, and this is the test that
     // would notice a hardcoded id copied from the brief.
+    //
+    // The disclosures are opened by index rather than by name, because there are now
+    // two buttons matching "settings" and `getByRole` would — correctly — refuse to
+    // guess which one to click.
     render(
       <>
         <DifficultyControl settings={DEFAULT_SETTINGS} onChange={() => {}} />
         <DifficultyControl settings={DEFAULT_SETTINGS} onChange={() => {}} />
       </>,
     );
+    const user = userEvent.setup();
+    for (const b of screen.getAllByRole('button', { name: /settings/i })) await user.click(b);
+
     expect(screen.getAllByLabelText(/skill level/i)).toHaveLength(2);
     expect(new Set(screen.getAllByLabelText(/skill level/i).map((i) => i.id)).size).toBe(2);
+    // `aria-controls` is a second id to get wrong, and a wrong one points a screen
+    // reader at nothing rather than at an error.
+    const controlled = screen.getAllByRole('button', { name: /settings/i })
+      .map((b) => b.getAttribute('aria-controls'));
+    expect(new Set(controlled).size).toBe(2);
   });
 
-  it('keeps every preset button and slider inside one named group of controls', () => {
+  it('keeps the five presets inside one named group of controls', () => {
+    // The name used to claim "and slider", which was never true: the slider is a
+    // plain labelled input outside the radiogroup, and now it is behind the
+    // disclosure as well. A test name that overstates what it checks is how a
+    // reader comes to trust it for something it does not cover.
     render(<DifficultyControl settings={DEFAULT_SETTINGS} onChange={() => {}} />);
     const group = screen.getByRole('radiogroup', { name: /difficulty/i });
     expect(within(group).getAllByRole('radio')).toHaveLength(PRESETS.length);
+  });
+});
+
+describe('the settings disclosure', () => {
+  // The requirement: the presets are the visible interface and the rest is folded
+  // away. The risk in implementing it is not that it is hard to build but that it
+  // quietly stops being true later — a slider added above the disclosure, a label
+  // left outside it — so the shape itself is pinned rather than assumed.
+
+  it('shows the five presets and nothing else, to start with', () => {
+    render(<Controlled />);
+    expect(screen.getAllByRole('radio')).toHaveLength(PRESETS.length);
+    expect(settingsButton()).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByLabelText(/skill level/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/minimum think time/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/hint quality/i)).not.toBeInTheDocument();
+  });
+
+  it('takes the strength label inside the panel with the control that explains it', () => {
+    // "Engine strength: Custom (7)" is a reading of the raw slider, so with the
+    // label outside the panel a learner could be shown a number whose only
+    // explanation is behind a button they have not found. The reverse complaint
+    // does not apply: opening the panel to check a setting and seeing the preset
+    // name is not a cost worth designing around.
+    render(<Controlled initial={{ ...DEFAULT_SETTINGS, skillLevel: 10 }} />);
+    expect(screen.queryByText(/engine strength/i)).not.toBeInTheDocument();
+  });
+
+  it('reveals all three adjustments when opened, and takes them away when closed', async () => {
+    render(<Controlled />);
+    await openSettings();
+
+    expect(settingsButton()).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByLabelText(/skill level/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/minimum think time/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/hint quality/i)).toBeInTheDocument();
+    expect(screen.getByText(/engine strength/i)).toBeInTheDocument();
+
+    await userEvent.setup().click(settingsButton());
+    expect(settingsButton()).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByLabelText(/skill level/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/minimum think time/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/hint quality/i)).not.toBeInTheDocument();
+  });
+
+  it('points the disclosure at a region that actually exists', async () => {
+    // `aria-controls` naming an id that is not on screen is worse than omitting it:
+    // it looks wired up and is not. The region is conditional, so this also pins
+    // that the two ids are generated from the same `useId` rather than typed twice.
+    render(<Controlled />);
+    await openSettings();
+    const id = settingsButton().getAttribute('aria-controls');
+    expect(id).toBeTruthy();
+    expect(document.getElementById(id!)).not.toBeNull();
+  });
+
+  it('keeps a change made inside the panel when it is closed again', async () => {
+    // The panel holds no state of its own, so folding it away must not read as
+    // undoing anything. What stays visible while it is closed is the preset row,
+    // and the row is the one thing that has to stay truthful about a level no
+    // preset matches: no button checked, rather than a stale one.
+    render(<Controlled />);
+    await openSettings();
+    fireEvent.change(screen.getByLabelText(/skill level/i), { target: { value: '10' } });
+    expect(screen.getByText('Engine strength: Custom (10)')).toBeInTheDocument();
+
+    await userEvent.setup().click(settingsButton());
+    expect(radio('Medium')).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getAllByRole('radio').every((b) => b.getAttribute('aria-checked') === 'false')).toBe(true);
+
+    // And it was not reverted behind the panel's back.
+    await openSettings();
+    expect(screen.getByText('Engine strength: Custom (10)')).toBeInTheDocument();
+  });
+
+  it('still lets a preset be chosen while collapsed', async () => {
+    // The point of the arrangement: the common case needs no opening. A variant
+    // that only worked through the panel would satisfy "the sliders are hidden"
+    // while breaking the thing the hiding was for.
+    // `Controlled`, not a bare panel: the row is only allowed to update if the
+    // parent applies what it reports, so asserting both halves of the click needs
+    // a parent that applies it.
+    const onChange = vi.fn();
+    render(<Controlled onChange={onChange} />);
+    await userEvent.setup().click(radio('Beginner'));
+    expect(onChange).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, skillLevel: PRESETS[0]!.skillLevel });
+    expect(radio('Beginner')).toHaveAttribute('aria-checked', 'true');
+    expect(radio('Medium')).toHaveAttribute('aria-checked', 'false');
   });
 });
