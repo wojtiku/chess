@@ -329,30 +329,33 @@ export function useGame(): GameApi {
   /**
    * The evaluation behind the bar.
    *
-   * Cleared first, every time, and refilled only if it is still the position on
-   * screen. The engine's score is for the side to move *in the position it
-   * searched*, so an evaluation of the previous position shown against the new
-   * position's turn is a bar pointing the wrong way — which is precisely the
-   * failure the eval bar's required `sideToMove` prop exists to make impossible.
+   * **Not cleared on a position change, on purpose.** It used to be, and the
+   * clearing was load-bearing for a while before it wasn't. The engine's score is
+   * for the side to move *in the position it searched*, so an evaluation of one
+   * position shown against another position's turn is a bar pointing the wrong way
+   * — and `setAnalysis(null)` used to be the first line of this effect, which
+   * papered over that for every render except the one between a move and this
+   * effect, since React runs effects *after* the commit. `App`'s FEN gate is what
+   * actually makes the invariant true; the clearing never did, and a comment here
+   * once claimed it did.
    *
-   * **This clearing is necessary and is NOT sufficient, and it is the caller that
-   * finishes the job.** `setAnalysis(null)` runs here, inside an effect, and React
-   * runs effects *after* the commit — so there is always a committed render between
-   * a move and this effect in which the previous position's score is still in
-   * state. For one render the bar would show a mirrored number, which is a *wrong*
-   * number rather than a missing one. `App` therefore gates on the `fen` the
-   * `Analysis` carries, and that gate — not this clearing — is what makes the
-   * invariant true. The three comments here and in `App` used to claim the
-   * clearing made it true on its own; the final review found that claim false, and
-   * the claim was in miniature the same self-referential pattern it was criticising.
+   * So the analysis is kept, and `App` decides what to do with it by comparing its
+   * `fen` to the one on screen: a match is shown live, a mismatch is shown **dimmed
+   * and in its own frame** — `Analysis.sideToMove`, the turn it was measured
+   * against, never the board's. Clearing instead would mean the bar is blank for
+   * the ~6s it takes the engine to run a reply search and *then* an analysis, and
+   * `whiteShare` draws "no score" as exactly 50, so a blank bar claims the position
+   * is level rather than admitting it does not know yet.
    *
-   * It also yields: while the engine owes a move for this position, the reply
-   * effect's search is the one that matters, and a second search for the same
-   * position would supersede it and leave the board with no opponent. A finished
-   * game is not evaluated at all.
+   * `newGame` still clears it, which is the one case where holding the last score
+   * would be plainly wrong: a fresh board has no relationship to the last game.
+   *
+   * While the engine owes a move for this position, the reply effect's search is
+   * the one that matters, and a second search for the same position would supersede
+   * it and leave the board with no opponent. A finished game is not evaluated at
+   * all, and keeps whatever it last had, dimmed.
    */
   useEffect(() => {
-    setAnalysis(null);
     // A finished game is not thought about: the eval bar is for a position being
     // played, and a search for a mate the learner has already been shown would
     // be engine work with nothing to inform.

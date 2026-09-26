@@ -75,10 +75,16 @@ function makeApi(over: Partial<GameApi> = {}): GameApi {
 
 const analysisFor = (fen: string, scoreCp: number): Analysis => ({
   fen,
+  sideToMove: new Chess(fen).turn(),
   scoreCp,
   depth: 20,
   lines: [],
 });
+
+/** `data-stale` / `data-unknown`, the two states that say "this is not a live
+ *  reading" without hiding a number the learner may still want. */
+const staleAttr = (): string | null => screen.getByTestId('eval-bar').getAttribute('data-stale');
+const unknownAttr = (): string | null => screen.getByTestId('eval-bar').getAttribute('data-unknown');
 
 /** `data-white-share`, the bar's own reading of which way it points. */
 const share = (): string => screen.getByTestId('eval-bar').getAttribute('data-white-share') ?? '';
@@ -95,51 +101,77 @@ describe("the eval bar's fen gate", () => {
     expect(Number(share())).toBeGreaterThan(50);
   });
 
-  it('ignores a score computed for a DIFFERENT position', () => {
-    // **The invariant.** A +200 for the side to move in the position *after*
-    // 1.e4, shown on the board *before* it: converting that with White to move
-    // is legal, but it is a number for a board that is not on screen. The gate
-    // must refuse it, and the honest rendering of "no analysis for this position"
-    // is the neutral bar.
+  it('shows a score for a DIFFERENT position dimmed, in its OWN frame', () => {
+    // **The invariant, and it is stronger than "do not mirror".** `OTHER` is the
+    // position after 1.e4, so it is **Black** to move there, and +200 means *Black*
+    // is two pawns up. Shown while the board displays the position before 1.e4, the
+    // honest reading is therefore **below** 50 — Black ahead, as measured.
+    //
+    // The tempting wrong answer is above 50, which is what you get by converting
+    // that score with the *board's* turn: +200 for "the side to move" read as
+    // +200 for White. So this one assertion separates the two, and a bar that
+    // blanks instead of showing it fails here too.
     api = makeApi({ analysis: analysisFor(OTHER, 200) });
     render(<App />);
 
-    expect(share()).toBe('50');
+    expect(new Chess(OTHER).turn()).toBe('b');
+    expect(new Chess(SHOWN).turn()).toBe('w');
+    expect(Number(share())).toBeLessThan(50);
+    expect(staleAttr()).toBe('true');
   });
 
-  it('ignores it even when the turn happens to agree', () => {
-    // The same staleness with the turn matching — after 1.e4 and 1...e5 it is
-    // White to move again, so a stale score converts without mirroring and the
-    // number is *plausible*. It is still a number for another board, and a bar
-    // that shows it is displaying an evaluation of a position the learner is not
-    // looking at. A gate that only caught turn changes would pass this.
+  it('shows it dimmed when the turn happens to agree', () => {
+    // The same staleness with the turn matching — after 1.e4 and 1...e5 it is White
+    // to move again, so a stale score converts without mirroring and the number is
+    // *plausible*. It is still a number for another board, so it is dimmed rather
+    // than presented as live. A gate that only caught turn changes would pass this,
+    // which is the point: the dimming is what marks it.
     const later = new Chess('rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2').fen();
     api = makeApi({ analysis: analysisFor(later, 200) });
     render(<App />);
 
-    expect(new Chess(SHOWN).turn()).toBe('w');
-    expect(new Chess(later).turn()).toBe('w');
-    expect(share()).toBe('50');
+    expect(Number(share())).toBeGreaterThan(50);
+    expect(staleAttr()).toBe('true');
   });
 
-  it('ignores a mate score from another position just as it ignores centipawns', () => {
-    // `whiteShare` takes the mate branch *before* the centipawn one, so a gate
-    // that only reasoned about `scoreCp` would let a stale mate through and the
-    // bar would read 100 — the strongest possible wrong answer.
-    api = makeApi({ analysis: { fen: OTHER, scoreMate: 3, depth: 20, lines: [] } });
+  it('shows a stale mate in its own frame too, since the mate branch comes first', () => {
+    // `whiteShare` takes the mate branch *before* the centipawn one, so this is
+    // the case where reading the frame backwards is most visible: a mate the bar
+    // attributes to the wrong side is the strongest possible wrong answer, and it
+    // would fill or empty the whole track rather than nudging it.
+    api = makeApi({ analysis: { fen: OTHER, sideToMove: 'b', scoreMate: 3, depth: 20, lines: [] } });
     render(<App />);
 
-    expect(share()).toBe('50');
+    // Shown, because a blank bar reads as a level bar. `OTHER` is Black to move,
+    // so a mate of 3 there is a mate *against* White: the bar empties, and a
+    // mirroring bar would fill.
+    expect(share()).toBe('0');
+    expect(staleAttr()).toBe('true');
   });
 
-  it('is neutral when there is no analysis at all', () => {
-    // The ordinary "not known yet" state, and the value the two cases above must
-    // be indistinguishable from — otherwise a learner could tell the two apart
-    // only by the bar being wrong.
+  it('marks a never-measured bar as unknown, not as level', () => {
+    // Before any analysis has landed there is nothing to hold, so the bar is
+    // `whiteShare`'s no-score answer of exactly 50 — and a bar sitting at the
+    // midpoint *claims the position is level*. `data-unknown` is what stops that
+    // reading, and it has to be distinct from `data-stale`, which means "an older
+    // position, here is its number".
     api = makeApi({ analysis: null });
     render(<App />);
 
     expect(share()).toBe('50');
+    expect(unknownAttr()).toBe('true');
+    expect(staleAttr()).toBeNull();
+  });
+
+  it('is not stale once the analysis catches up with the board', () => {
+    api = makeApi({ analysis: analysisFor(OTHER, 200) });
+    const { rerender } = render(<App />);
+    expect(staleAttr()).toBe('true');
+
+    api = makeApi({ analysis: analysisFor(SHOWN, 200) });
+    rerender(<App />);
+    expect(staleAttr()).toBeNull();
+    expect(unknownAttr()).toBeNull();
   });
 
   it('re-reads the gate when the position and the analysis change together', () => {
@@ -147,8 +179,9 @@ describe("the eval bar's fen gate", () => {
     // matching `fen`. The gate is a per-render comparison, so it has to re-evaluate
     // rather than latch — and this is the shape the real app takes when a
     // position arrives with its evaluation already in hand.
+    api = makeApi({ analysis: null });
     const { rerender } = render(<App />);
-    expect(share()).toBe('50');
+    expect(unknownAttr()).toBe('true');
 
     api = makeApi({ analysis: analysisFor(SHOWN, 200) });
     rerender(<App />);

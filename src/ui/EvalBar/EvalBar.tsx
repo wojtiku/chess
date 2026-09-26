@@ -38,6 +38,25 @@ export interface EvalBarProps extends EngineScore {
   /** Which way round the board is drawn, `'w'` or `'b'`. Moves the fills around the
    *  track; it never changes what `data-white-share` means. */
   orientation: Side;
+  /**
+   * This score is for an **earlier position** than the one on screen, and is being
+   * shown dimmed rather than withheld.
+   *
+   * A blank bar after every move is worse than a dimmed one: the engine needs a
+   * reply search and then an analysis, serially, so there is a multi-second window
+   * each turn where the position on screen has no evaluation yet. Blanking it draws
+   * `whiteShare`'s no-score answer, which is exactly 50 — and a bar sitting
+   * precisely at 50 claims the position is level, which is a different statement
+   * from "not known yet".
+   *
+   * **The caller is responsible for the frame.** When it is stale, `sideToMove` must
+   * be the turn of the position the score was measured against, not the turn now on
+   * screen. Handing a stale score over with the current turn produces a mirrored
+   * number — the wrong answer, confidently drawn, rather than a missing one. That
+   * is why `Analysis` carries its own `sideToMove` rather than the caller deriving
+   * one.
+   */
+  stale?: boolean;
 }
 
 /** The same score, restated from White's point of view. */
@@ -130,20 +149,27 @@ export function formatEvalLabel(score: WhiteRelativeScore): string {
  * that is deliberately not offered: a frozen score would be wrong the moment the
  * position changes, and only the caller knows the FEN and the depth.
  */
-export default function EvalBar({ sideToMoveCp, sideToMoveMate, sideToMove, orientation }: EvalBarProps) {
+export default function EvalBar({ sideToMoveCp, sideToMoveMate, sideToMove, orientation, stale = false }: EvalBarProps) {
   const score = toWhiteRelative({ sideToMoveCp, sideToMoveMate }, sideToMove);
   const share = Math.round(whiteShare(score));
   // White sits at the bottom of the track in the default orientation, so the white
   // fill is measured from the bottom; flipped, it is measured from the top.
   const whiteFromBottom = orientation === 'w' ? share : 100 - share;
+  /** No score at all — not stale, but never measured. Distinct from 50/50, which is
+   *  a claim about the position. */
+  const unknown = sideToMoveCp === undefined && sideToMoveMate === undefined;
 
   return (
     <div
-      className="evalbar"
+      className={`evalbar${stale ? ' evalbar--stale' : ''}`}
       data-testid="eval-bar"
       // Always White's share, in both orientations, so this attribute means one
       // thing and is assertable.
       data-white-share={share}
+      // Both are asserted by tests and both are load-bearing in the stylesheet, so
+      // neither is decoration.
+      data-stale={stale || undefined}
+      data-unknown={unknown || undefined}
     >
       <div className="evalbar-track">
         {/* `data-fill` / `data-height` duplicate the inline height deliberately: which

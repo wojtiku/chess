@@ -19,11 +19,19 @@
 import { ADVICE_SKILL_LEVEL, EngineError, RETRYABLE_ENGINE_CODES } from '../engine/engineClient';
 import type { PvLine, SearchResult } from '../engine/engineClient';
 import { AnalysisCache } from './cache';
+import type { Side } from '../chess/types';
 
 export interface Analysis {
   /** The position that was analysed. Also the FEN the SAN of every line is
    * played out from. */
   fen: string;
+  /** Whose turn it was in `fen`, i.e. the side `scoreCp` and `scoreMate` are
+   * for. Carried so a caller holding an analysis for an *earlier* position can
+   * still render it correctly: the score has to be converted with the turn it was
+   * measured against, and re-deriving that from the position now on screen is
+   * exactly the mirroring bug — a confidently wrong number rather than a missing
+   * one. Derived from `fen` once, here, so no caller has to parse a FEN. */
+  sideToMove: Side;
   /** Engine score for the **side to move in `fen`**, from the best line. */
   scoreCp?: number;
   /** Mate distance for the **side to move in `fen`**, from the best line:
@@ -56,6 +64,20 @@ export interface EngineLike {
 
 export const DEFAULT_MULTI_PV = 5;
 export const DEFAULT_ANALYSIS_MOVETIME_MS = 3000;
+
+/** Whose turn a FEN records — its second field. The engine's score is for this
+ *  side, so this is the one fact that says how to read the number.
+ *
+ *  Throws on a FEN that has no turn rather than defaulting, because a default here
+ *  is a silently mirrored eval bar. The FENs that reach this are the ones the app
+ *  itself produced via `fenOf(game)`, so a malformed one is a bug to hear about. */
+export function sideToMoveIn(fen: string): Side {
+  const turn = fen.split(' ')[1];
+  if (turn !== 'w' && turn !== 'b') {
+    throw new Error(`FEN has no side to move: ${JSON.stringify(fen)}`);
+  }
+  return turn;
+}
 
 /** Whether a rejection from `search` is worth one more try.
  *
@@ -177,6 +199,7 @@ export function makeEngineSource(client: EngineLike, options: EngineSourceOption
         const top = result.lines[0];
         const analysis: Analysis = Object.freeze({
           fen,
+          sideToMove: sideToMoveIn(fen),
           scoreCp: top?.scoreCp,
           scoreMate: top?.scoreMate,
           depth: result.depth,

@@ -272,6 +272,10 @@ function moveButton(san: string): HTMLElement {
 }
 
 /** The eval bar's White-relative share, 0..100. Always White's, by definition. */
+function evalBar(): HTMLElement {
+  return screen.getByTestId('eval-bar');
+}
+
 function evalShare(): string | null {
   return screen.getByTestId('eval-bar').getAttribute('data-white-share');
 }
@@ -526,8 +530,13 @@ describe('App', () => {
     // position's turn, which is the sign error this whole test is about.
     await user.click(moveButton('e4'));
     // Cleared rather than wrong: the bar never shows one position's score against
-    // another position's turn, so it reads level while the answer is out.
-    expect(evalShare()).toBe('50');
+    // another position's turn. It reads the LIVE position's own evaluation, dimmed
+    // — not level, and not 10, which is what converting this position's -900 with
+    // the live turn would give. Naming all three is the point: "50" was the old
+    // blank answer, and "10" is the sign error this test was written about.
+    expect(evalShare()).toBe('51');
+    expect(evalShare()).not.toBe('10');
+    expect(evalBar().getAttribute('data-stale')).toBe('true');
     // Straight back to the live position, whose evaluation is already known, so
     // nothing is in flight for the return trip and the answer for the reviewed ply
     // can be neither superseded nor shown.
@@ -1037,9 +1046,12 @@ describe('App', () => {
     });
     expect(FakeWorker.searches).toBe(searchesAfterMate);
     expect(moves()).toHaveLength(4);
-    // Level rather than showing the pre-mate position's score: the mate moved the
-    // board, and that score is for a position that is no longer on screen.
-    expect(evalShare()).toBe('50');
+    // The last evaluation is kept and dimmed rather than blanked. The mate moved the
+    // board, so the number on screen is for the position before it — which is why it
+    // is marked stale — but a mate is still a position, and a bar that empties the
+    // instant the game ends throws away the reading that explains the mate.
+    expect(evalBar().getAttribute('data-stale')).toBe('true');
+    expect(evalShare()).not.toBe('50');
   });
 
   it('degrades to a local two-player game when the engine dies', async () => {

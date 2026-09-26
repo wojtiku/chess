@@ -912,3 +912,48 @@ test('all 64 squares are the same size, occupied or not', async ({ page }) => {
     await check(`${width}px viewport`);
   }
 });
+
+test('the eval bar dims between a move and its new evaluation', async ({ page }) => {
+  // The bug this pins. The engine runs a reply search and then an analysis, strictly
+  // one at a time, so for several seconds after every learner move the position on
+  // screen has no evaluation of its own. The bar used to blank — and `whiteShare`
+  // draws "no score" as exactly 50, so a blank bar was a bar sitting precisely at
+  // the midpoint, which *claims the position is level* rather than admitting it does
+  // not know. It now holds the last score, dimmed.
+  await page.goto('/');
+  await page.waitForSelector('[data-square]');
+
+  const bar = page.getByTestId('eval-bar');
+  const share = async () => bar.getAttribute('data-white-share');
+  const label = async () => (await bar.locator('.evalbar-label').textContent())?.trim() ?? '';
+  const dimmed = async () =>
+    Number(await bar.locator('.evalbar-track').evaluate((el) => getComputedStyle(el).opacity));
+
+  // Before anything has been measured there is no score to hold, so the bar is
+  // marked unknown rather than drawn as a level split.
+  await expect(bar).toHaveAttribute('data-unknown', 'true');
+  await expect(bar).not.toHaveAttribute('data-stale', 'true');
+
+  // Wait for a real reading.
+  await expect
+    .poll(async () => (await label()) === '—' ? 'pending' : await label(), { timeout: 30_000 })
+    .not.toBe('pending');
+  const firstShare = await share();
+  const firstLabel = await label();
+  expect(firstLabel).not.toBe('—');
+  expect(Number(await dimmed())).toBe(1);
+
+  // A move, and immediately afterwards: the previous reading is still on screen,
+  // marked stale and visibly receded.
+  await play(page, 'e2', 'e4');
+  await expect(bar).toHaveAttribute('data-stale', 'true');
+  await expect(bar).not.toHaveAttribute('data-unknown', 'true');
+  expect(Number(await dimmed())).toBeLessThan(0.5);
+  expect(await share()).toBe(firstShare);
+  expect(await label()).toBe(firstLabel);
+
+  // And it comes back to live, with a new number, once the analysis lands.
+  await expect(bar).not.toHaveAttribute('data-stale', 'true', { timeout: 30_000 });
+  expect(Number(await dimmed())).toBe(1);
+  expect(await label()).not.toBe('—');
+});

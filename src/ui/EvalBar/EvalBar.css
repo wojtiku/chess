@@ -10,6 +10,32 @@
 .evalbar-black { position: absolute; inset: 0 0 auto 0; background: #222; transition: height 220ms ease; }
 .evalbar-white { position: absolute; inset: auto 0 0 0; background: #f4f4f4; transition: height 220ms ease; }
 .evalbar-label { font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* A score for an earlier position: still shown, because a blank bar after every
+   move is worse than a dimmed one, but dimmed hard enough that it cannot be read
+   as a live reading. Opacity rather than a colour change, so a dark theme and a
+   light one both recede, and it is applied to the whole component so the number
+   dims with the bar — a bright number under a faded bar reads as current. */
+.evalbar--stale .evalbar-track,
+.evalbar--stale .evalbar-label { opacity: 0.3; }
+.evalbar--stale .evalbar-track { border-style: dashed; }
+
+/* No score has ever been measured. `whiteShare` answers 50 in this case, and a bar
+   at exactly 50 claims the position is level — a different statement from "not
+   known". Hatched rather than filled, so it cannot be mistaken for a reading. */
+.evalbar[data-unknown] .evalbar-black,
+.evalbar[data-unknown] .evalbar-white {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--square-light),
+    var(--square-light) 3px,
+    var(--square-dark) 3px,
+    var(--square-dark) 6px
+  );
+  opacity: 0.45;
+}
+.evalbar[data-unknown] .evalbar-label { opacity: 0.45; }
+
 @media (prefers-reduced-motion: reduce) {
   .evalbar-black, .evalbar-white { transition: none; }
 }

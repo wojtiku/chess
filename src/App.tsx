@@ -64,8 +64,19 @@ export default function App() {
   // real screen still depends on React's effect-flush ordering for a discrete
   // click, so it may never be visible — but it is in React's committed model, and a
   // mirrored bar is a wrong bar.
+  //
+  // **A stale score is shown, not withheld.** The engine runs a reply search and
+  // then an analysis, strictly one at a time, so for several seconds after every
+  // learner move the position on screen has no evaluation of its own. Blanking the
+  // bar draws `whiteShare`'s no-score answer, which is exactly 50 — and a bar
+  // sitting precisely at the midpoint *claims the position is level*, which is a
+  // different statement from "not known yet". So the last score is kept, dimmed,
+  // and `sideToMove` is `shown.sideToMove` — the turn the score was measured
+  // against. Taking the turn from the board instead is the mirroring bug above;
+  // `App.evalGate.test.tsx` pins the two disagreeing.
   const drawnFen = g.game.fen();
-  const drawn = g.analysis?.fen === drawnFen ? g.analysis : null;
+  const shown = g.analysis;
+  const stale = shown !== null && shown.fen !== drawnFen;
   const lastMove = (() => {
     const played = g.snapshot.moves[g.snapshot.cursor - 1];
     return played === undefined ? null : { from: played.from, to: played.to };
@@ -107,9 +118,10 @@ export default function App() {
       <div className="app-main">
         <div className="app-board">
           <EvalBar
-            sideToMoveCp={drawn?.scoreCp}
-            sideToMoveMate={drawn?.scoreMate}
-            sideToMove={g.game.turn()}
+            sideToMoveCp={shown?.scoreCp}
+            sideToMoveMate={shown?.scoreMate}
+            sideToMove={shown?.sideToMove ?? g.game.turn()}
+            stale={stale}
             orientation={g.settings.orientation}
           />
           <Board

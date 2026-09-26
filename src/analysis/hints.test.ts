@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AnalysisCache } from './cache';
 import { pickHint, type Hint } from './hints';
-import type { Analysis } from './evaluate';
+import { sideToMoveIn, type Analysis } from './evaluate';
 import type { PvLine } from '../engine/engineClient';
 
 // The brief's cache and hint assertions are kept verbatim so that nothing here is
@@ -19,6 +19,9 @@ const line = (uci: string, scoreCp?: number, scoreMate?: number): PvLine => ({
 
 const analysis = (lines: PvLine[]): Analysis => ({
   fen: START_FEN,
+  // Derived from the FEN rather than hardcoded, so a fixture that changes the
+  // position cannot quietly disagree with the turn the score is for.
+  sideToMove: sideToMoveIn(START_FEN),
   scoreCp: lines[0]?.scoreCp, scoreMate: lines[0]?.scoreMate, depth: 20, lines,
 });
 
@@ -190,6 +193,7 @@ describe('pickHint', () => {
     // is the classic way a hint layer ends up advocating the worst move.
     const a: Analysis = {
       fen: 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1',
+      sideToMove: 'b',
       scoreCp: -30, depth: 20, lines: [line('e7e5', -30)],
     };
     const h = pickHint(a, 'best')!;
