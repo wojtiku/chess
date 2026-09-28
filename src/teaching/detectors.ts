@@ -45,7 +45,20 @@ export interface FactPack {
   /** In pawns: p=1, n=3, b=3, r=5, q=9, k=0. Keyed by chess.js colour codes. */
   material: Record<Side, number>;
   legalMoveCount: number;
+  /**
+   * Every one of the learner's pieces with all four booleans.
+   *
+   * NOT persisted. A Fact pack is stored with every attempt in the learner
+   * record, and this field is 1,647 of the pack's 2,299 bytes — over half the
+   * storage for a shape whose four booleans per piece are almost never all read.
+   * The detectors reason over it in memory; `toStoredFacts` is what goes into a
+   * record, and it keeps only the two derived lists that are actually consulted.
+   */
   learnerPieces: PieceFact[];
+  /** Squares where the learner's own piece is attacked and undefended. */
+  hanging: Square[];
+  /** Non-pawns of the learner's still on their starting square. */
+  undeveloped: Square[];
   /** UCI, e.g. `h5xf7`. Only moves the side to move may actually make. */
   capturesAvailable: string[];
   checksAvailable: string[];
@@ -166,8 +179,37 @@ export function boardFacts(fen: string, learnerSide?: Side): FactPack {
     material,
     legalMoveCount: game.moves().length,
     learnerPieces,
+    hanging: learnerPieces.filter((p) => p.hangs).map((p) => p.square),
+    undeveloped: learnerPieces.filter((p) => p.undeveloped).map((p) => p.square),
     capturesAvailable,
     checksAvailable,
     matesAvailable,
   };
 }
+
+/** What a Fact pack looks like once it is stored in the learner record.
+ *
+ *  `learnerPieces` is dropped. It is 1,647 of the pack's 2,299 bytes and only
+ *  `hangs` was ever read from it outside the detectors, so keeping it meant
+ *  paying for a shape nobody consulted — a fact pack per attempt, a thousand
+ *  attempts, and the storage going to booleans that are recomputed in
+ *  microseconds anyway. The two derived lists carry what is used.
+ *
+ *  Everything else survives, including the negative facts. `inCheck: false` and
+ *  empty capture lists are what make "there was nothing here" sayable, and they
+ *  are the facts the probe showed a model needs in order not to invent a
+ *  threat. */
+export function toStoredFacts(facts: FactPack | StoredFactPack): StoredFactPack {
+  // Accepts both, because an already-stored pack is re-appended on a retry, and
+  // destructuring a field that may be absent is fine — the rest is the same
+  // shape either way.
+  const { learnerPieces: _dropped, ...rest } = facts as FactPack;
+  return rest;
+}
+
+/** A Fact pack as stored: everything except the detectors' working shape.
+ *
+ *  A distinct type rather than `FactPack` with one field missing, so a stored
+ *  pack cannot be handed back to something that expects `learnerPieces` — the
+ * *type* is the guard, which is the point of dropping the field at all. */
+export type StoredFactPack = Omit<FactPack, 'learnerPieces'>;

@@ -222,6 +222,8 @@ describe('factsToShow: facts, not judgements', () => {
       learnerPieces: [
         { square: 'e2', piece: 'p', attackedByOpponent: false, defendedByYou: true, hangs: false, undeveloped: false },
       ],
+      hanging: [],
+      undeveloped: [],
       capturesAvailable: [],
       checksAvailable: [],
       matesAvailable: [],
