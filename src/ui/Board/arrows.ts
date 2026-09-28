@@ -1,9 +1,47 @@
 import { isSquare, type Orientation } from './squares';
 
-/** One hint arrow. `from` and `to` are squares; the board mirrors them itself. */
+/**
+ * What an arrow means.
+ *
+ * The inventory found one arrow style for every meaning, so "this is where your
+ * piece went" and "this is where it could go" were drawn identically. A
+ * consequence needs all three at once — what the learner played, what came
+ * back, and what the engine wanted instead — and with one style the learner has
+ * to read the squares to work out which is which. `hint` is the default so the
+ * existing hint caller is unchanged.
+ */
+export type ArrowRole = 'hint' | 'played' | 'reply' | 'better';
+
 export interface BoardArrow {
   from: string;
   to: string;
+  /** Defaults to `hint`. */
+  role?: ArrowRole;
+}
+
+export interface ArrowStyle {
+  width: number;
+  opacity: number;
+  /** An SVG dash pattern, or undefined for a solid line. */
+  dash?: string;
+}
+
+/** How each role is drawn.
+ *
+ * Weight encodes what the arrow is *for*, and it is the only cue the learner
+ * gets: the learner's own move is context, the reply is the consequence, and
+ * the better move is the answer. So the played move is thin and dashed and
+ * faded, the reply is solid, and the reveal is the heaviest line on the board.
+ */
+const STYLES: Record<ArrowRole, ArrowStyle> = {
+  hint: { width: 1.6, opacity: 0.85 },
+  played: { width: 1.4, opacity: 0.5, dash: '3 3' },
+  reply: { width: 2, opacity: 0.9 },
+  better: { width: 3, opacity: 1 },
+};
+
+export function arrowStyle(role: ArrowRole = 'hint'): ArrowStyle {
+  return STYLES[role];
 }
 
 /** The four corners of the 0..100 unit space an arrow overlay is drawn in. */

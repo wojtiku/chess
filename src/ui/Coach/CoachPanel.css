@@ -1,0 +1,125 @@
+/* The coach's column. Same surfaces as the rest of the app: a flat warm panel, a
+   hairline border, no shadow. The disclosure list is set in the muted tone
+   because it is text to be read rather than an instruction to be obeyed. */
+
+.coach {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 34rem;
+}
+
+.coach h2 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--fg);
+}
+
+.coach-lede {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.coach-key,
+.coach-saved {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  padding: 0.875rem;
+}
+
+.coach-key h3 {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--fg);
+}
+
+.coach-disclosure {
+  margin: 0;
+  padding-left: 1.125rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.coach-disclosure li + li {
+  margin-top: 0.25rem;
+}
+
+.coach-key-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.coach-key input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--panel-raised);
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  padding: 0.4375rem 0.5rem;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.coach-key input:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
+}
+
+.coach-key button,
+.coach-saved button {
+  background: var(--brass);
+  color: var(--on-brass);
+  border: 1px solid var(--brass);
+  border-radius: 3px;
+  padding: 0.375rem 0.75rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background 220ms ease;
+}
+
+.coach-key button:disabled {
+  background: var(--panel-raised);
+  color: var(--muted);
+  border-color: var(--edge);
+  cursor: not-allowed;
+}
+
+.coach-key button:not(:disabled):hover {
+  background: var(--brass-dim);
+}
+
+.coach-saved p {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.coach-saved button {
+  background: var(--panel-raised);
+  color: var(--fg);
+  border-color: var(--edge);
+}
+
+.coach-saved button:hover {
+  background: var(--panel-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coach-key button,
+  .coach-saved button {
+    transition: none;
+  }
+}

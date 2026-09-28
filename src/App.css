@@ -49,3 +49,61 @@
   .app-main { flex-direction: column; align-items: center; }
   .app-panel { width: 100%; }
 }
+
+/* --- the mode switcher -------------------------------------------------------
+   Four buttons under the title. Styled as a row of quiet surfaces with the
+   current one picked out by the brass edge rather than a filled background: the
+   app spends brass on the one thing it wants the eye to land on, and "you are
+   here" is not that — a filled button in the header would out-shout the board. */
+
+.app-modes {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+}
+
+.app-modes button {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 3px 3px 0 0;
+  padding: 0.25rem 0.625rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: color 220ms ease, border-color 220ms ease;
+}
+
+.app-modes button:hover {
+  color: var(--fg);
+  background: var(--panel);
+}
+
+/* The current mode: brass underline and full-contrast text. `aria-current` is set
+   too, so this is announced and not only seen. */
+.app-modes button[aria-current='page'] {
+  color: var(--fg);
+  border-bottom-color: var(--brass);
+}
+
+.app-modes button:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
+}
+
+/* A single full-width column, for the modes that are a panel rather than a board
+   beside a panel. The learning modes have no board of their own yet, so they get
+   the whole area rather than an empty left half. */
+.app-main-single {
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-modes button {
+    transition: none;
+  }
+}

@@ -1,0 +1,162 @@
+/* The quickstart's own column. It sits in the app's side panel rather than
+   owning a layout, so these rules describe a block and not a screen — the
+   widths, the breakpoints and the board's sizing all belong to App.css and
+   Board.css, and duplicating them here is how two layouts drift apart. */
+
+.quickstart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.quickstart-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  /* Same surface as the rest of the panel: a flat warm panel with a hairline
+     border, no shadow. */
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  padding: 0.75rem;
+}
+
+.quickstart-progress {
+  margin: 0;
+  font-family: var(--font-score);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The instruction is the task and the largest thing in the panel. System sans,
+   not the score serif: this is an instruction, not a move list. */
+.quickstart-instruction {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.35;
+  color: var(--fg);
+}
+
+/* The reason for the step, in the muted tone and one step down in size. It is
+   deliberately subordinate: a learner should read the instruction first and the
+   rationale second, and the reverse order reads as a lecture. */
+.quickstart-purpose {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.quickstart-goal {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--brass);
+}
+
+.quickstart-feedback {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  padding: 0.5rem 0.625rem;
+  border-radius: 3px;
+  border-left: 2px solid var(--edge);
+  background: var(--panel-raised);
+  color: var(--fg);
+}
+
+/* Correct: the brass edge is the only positive signal in the whole app, so it
+   is spent here and nowhere else. Nothing else gets a green. */
+.quickstart-feedback[data-variant='solved'] {
+  border-left-color: var(--brass);
+  color: var(--brass);
+}
+
+/* Wrong: not red. A learner who is learning gets information, not a scolding,
+   and the app has no palette entry for failure. The muted left edge says
+   "try again" without saying "bad". */
+.quickstart-feedback[data-variant='illegal'],
+.quickstart-feedback[data-variant='not-the-piece'],
+.quickstart-feedback[data-variant='wrong-target'] {
+  border-left-color: var(--muted);
+}
+
+.quickstart-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* One filled action per panel. The quickstart's primary button is "Next step",
+   and it is the only place in the app that gets the brass fill, so the
+   eye finds it. */
+.quickstart-actions button[data-testid='quickstart-next'] {
+  background: var(--brass);
+  color: var(--on-brass);
+  border: 1px solid var(--brass);
+  border-radius: 3px;
+  padding: 0.375rem 0.75rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background 220ms ease;
+}
+
+.quickstart-actions button[data-testid='quickstart-next']:hover {
+  background: var(--brass-dim);
+}
+
+.quickstart-actions button:not([data-testid='quickstart-next']) {
+  background: var(--panel-raised);
+  color: var(--fg);
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  padding: 0.375rem 0.75rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background 220ms ease, border-color 220ms ease;
+}
+
+.quickstart-actions button:not([data-testid='quickstart-next']):hover {
+  background: var(--panel-hover);
+  border-color: var(--muted);
+}
+
+.quickstart-actions button:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
+}
+
+/* The step dots. Filled = solved, ring = current, empty = not reached. */
+.quickstart-dots {
+  display: flex;
+  gap: 0.3125rem;
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+}
+
+.quickstart-dots li {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  border: 1px solid var(--edge);
+  background: transparent;
+}
+
+.quickstart-dots li[data-current='true'] {
+  border-color: var(--brass);
+}
+
+.quickstart-dots li[data-done='true'] {
+  background: var(--brass);
+  border-color: var(--brass);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quickstart-actions button {
+    transition: none;
+  }
+}

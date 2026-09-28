@@ -3,7 +3,7 @@ import type { CSSProperties, DragEvent, KeyboardEvent } from 'react';
 import type { Chess } from '../../chess/rules';
 import { legalMovesVerbose, parsePromotion } from '../../chess/rules';
 import { displaySquares, stepSquare, type ArrowKey, type Orientation } from './squares';
-import { arrowEnds, squareCentre, type BoardArrow } from './arrows';
+import { arrowEnds, arrowStyle, squareCentre, type BoardArrow } from './arrows';
 import { pieceLabel, pieceSrc } from './pieces';
 import PromotionPicker from '../PromotionPicker/PromotionPicker';
 import './Board.css';
@@ -377,16 +377,25 @@ export default function Board({
               // A hint that is not a pair of squares gets no arrow rather than a line
               // full of NaN, and one bad hint does not hide the others.
               if (ends === null) return null;
+              const role = arrow.role ?? 'hint';
+              const style = arrowStyle(role);
               return (
                 <line
-                  key={`${arrow.from}-${arrow.to}-${index}`}
+                  key={`${role}-${arrow.from}-${arrow.to}-${index}`}
+                  // The testid stays keyed on the squares, not the role: an
+                  // arrow's identity is which squares it joins, and the existing
+                  // tests assert that. The role is available as an attribute for
+                  // styling and for queries that need "the reply" specifically.
                   data-testid={`arrow-${arrow.from}-${arrow.to}`}
+                  data-role={role}
                   x1={ends.x1}
                   y1={ends.y1}
                   x2={ends.x2}
                   y2={ends.y2}
                   stroke="currentColor"
-                  strokeWidth="1.6"
+                  strokeWidth={style.width}
+                  strokeOpacity={style.opacity}
+                  strokeDasharray={style.dash}
                   markerEnd={`url(#${markerId})`}
                 />
               );

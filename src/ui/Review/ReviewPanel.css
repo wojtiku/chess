@@ -1,0 +1,43 @@
+/* The review queue's column. */
+
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 34rem;
+}
+
+.review h2 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--fg);
+}
+
+.review-empty {
+  margin: 0;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  padding: 0.875rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.review-queue {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.review-queue li {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  padding: 0.5rem 0.625rem;
+  font-size: 0.8125rem;
+  color: var(--fg);
+}

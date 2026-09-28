@@ -4,7 +4,7 @@
 // goes to which panel — and the two places where wiring is easy to get subtly
 // wrong, both called out below.
 
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useGame } from './game/useGame';
 import Board from './ui/Board/Board';
 import MoveList from './ui/MoveList/MoveList';
@@ -14,10 +14,20 @@ import Controls from './ui/Controls/Controls';
 import DifficultyControl from './ui/DifficultyControl/DifficultyControl';
 import ResultBanner from './ui/ResultBanner/ResultBanner';
 import EngineStatusView from './ui/EngineStatus/EngineStatus';
+import Quickstart from './ui/Quickstart/Quickstart';
+import CoachPanel from './ui/Coach/CoachPanel';
+import ReviewPanel from './ui/Review/ReviewPanel';
+import { ModeSwitcher, type Mode } from './ui/TutorShell';
 import './App.css';
 
 export default function App() {
   const g = useGame();
+  // One piece of state for the mode. No router and no landing screen: the
+  // practice board is what already works and what the learner came for, so the
+  // learning modes hang off it rather than replacing it. See the map's settled
+  // decision on the app's shape.
+  const [mode, setMode] = useState<Mode>('play');
+  const onMode = useCallback((m: Mode) => setMode(m), []);
   /** Everything that needs the engine is off, and the board is local two-player. */
   const engineUnavailable = g.engineStatus === 'error';
 
@@ -83,8 +93,31 @@ export default function App() {
       <header className="app-header">
         <h1>Chess Practice Board</h1>
         <p className="app-sub">You play White. Take your time.</p>
+        <ModeSwitcher mode={mode} onChange={onMode} />
       </header>
 
+      {mode === 'learn' && (
+        <div className="app-main-single">
+          <Quickstart
+            onFinished={() => setMode('review')}
+            onCancel={() => setMode('play')}
+          />
+        </div>
+      )}
+
+      {mode === 'coach' && (
+        <div className="app-main-single">
+          <CoachPanel />
+        </div>
+      )}
+
+      {mode === 'review' && (
+        <div className="app-main-single">
+          <ReviewPanel />
+        </div>
+      )}
+
+      {mode === 'play' && (
       <div className="app-main">
         <div className="app-board">
           <EvalBar
@@ -169,6 +202,7 @@ export default function App() {
           />
         </aside>
       </div>
+      )}
     </div>
   );
 }
