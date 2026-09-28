@@ -123,3 +123,42 @@
     transition: none;
   }
 }
+
+/* The provider picker and the save-failure notice. */
+
+.coach-key select {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--panel-raised);
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  padding: 0.4375rem 0.5rem;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.coach-key select:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
+}
+
+.coach-provider-help {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* A failed save. Red is not in this app's palette and should not be added for one
+   notice: the message says what went wrong and what to do about it, and
+   role=alert announces it. The brass edge is the app's only alarm, spent here. */
+.coach-notice {
+  margin: 0;
+  padding: 0.5rem 0.625rem;
+  border-left: 2px solid var(--brass);
+  background: var(--panel-raised);
+  border-radius: 3px;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--fg);
+}

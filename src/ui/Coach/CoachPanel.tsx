@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { PROVIDERS, clearProvider, loadProvider, maskKey, saveProvider, type ProviderId } from './providerKey';
 import './CoachPanel.css';
 
 /**
@@ -21,20 +22,32 @@ import './CoachPanel.css';
  */
 export default function CoachPanel() {
   const [key, setKey] = useState('');
-  const [saved, setSaved] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  // Read on MOUNT, not on write. The panel unmounts whenever the mode changes,
+  // so a value held only in component state was lost every time the learner
+  // looked at the board and came back — which is the bug this fixes: the key was
+  // written to storage and never read back out of it.
+  const [saved, setSaved] = useState(() => loadProvider());
+  const [provider, setProvider] = useState<ProviderId>('gemini');
+  const [notice, setNotice] = useState<string | null>(null);
 
   const save = useCallback(() => {
-    const trimmed = key.trim();
-    if (trimmed.length === 0) return;
-    setBusy(true);
-    // Synchronous for now: the call layer is the next step, and a key that is
-    // accepted and then rejected by the provider would be worse than one that is
-    // plainly stored.
-    localStorage.setItem('chess.coach.provider', JSON.stringify({ key: trimmed, savedAt: Date.now() }));
-    setSaved(trimmed);
-    setBusy(false);
-  }, [key]);
+    const stored = saveProvider(key, provider);
+    if (stored === null) {
+      // A failed write must not read as a saved key. Storage can be unavailable
+      // — private browsing, a full quota — and the learner would otherwise find
+      // out at the first call instead of here, where it is fixable.
+      setNotice('This browser would not store the key. Check that site data is allowed, then try again.');
+      return;
+    }
+    setNotice(null);
+    setSaved(stored);
+    setKey('');
+  }, [key, provider]);
+
+  const forget = useCallback(() => {
+    clearProvider();
+    setSaved(null);
+  }, []);
 
   return (
     <div className="coach">
@@ -54,7 +67,29 @@ export default function CoachPanel() {
               Your key is stored on this device only. It is never sent to this app, and it never
               leaves your browser.
             </li>
+            <li>
+              Any script on this page could read it while the page is open — that is how browser
+              storage works, and this app cannot seal it.
+            </li>
           </ul>
+
+          <label className="coach-key-label" htmlFor="coach-provider">
+            Provider
+          </label>
+          <select
+            id="coach-provider"
+            data-testid="coach-provider"
+            value={provider}
+            onChange={(e) => setProvider(e.target.value as ProviderId)}
+          >
+            {PROVIDERS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <p className="coach-provider-help">{PROVIDERS.find((p) => p.id === provider)?.help}</p>
+
           <label className="coach-key-label" htmlFor="coach-key-input">
             Provider API key
           </label>
@@ -67,30 +102,31 @@ export default function CoachPanel() {
             onChange={(e) => setKey(e.target.value)}
             placeholder="Paste your key"
           />
+          {notice !== null && (
+            <p className="coach-notice" data-testid="coach-notice" role="alert">
+              {notice}
+            </p>
+          )}
           <button
             type="button"
             data-testid="coach-key-save"
             onClick={save}
-            disabled={busy || key.trim().length === 0}
+            disabled={key.trim().length === 0}
           >
-            {busy ? 'Saving…' : 'Save key'}
+            Save key
           </button>
         </div>
       ) : (
         <div className="coach-saved" data-testid="coach-saved">
           <p>
-            A key is saved on this device. The coach is not wired to a provider yet, so there is
-            nothing to ask it.
+            A key is saved on this device
+            {' '}
+            <span data-testid="coach-key-masked">
+              ({maskKey(saved.key)}, {PROVIDERS.find((p) => p.id === saved.provider)?.label ?? saved.provider})
+            </span>
+            . The coach is not wired to a provider yet, so there is nothing to ask it.
           </p>
-          <button
-            type="button"
-            data-testid="coach-key-clear"
-            onClick={() => {
-              localStorage.removeItem('chess.coach.provider');
-              setSaved(null);
-              setKey('');
-            }}
-          >
+          <button type="button" data-testid="coach-key-clear" onClick={forget}>
             Remove key
           </button>
         </div>
