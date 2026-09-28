@@ -205,6 +205,7 @@ describe('reduce: playing', () => {
     // list. The game is still over, so the move must be refused — which is why
     // the live check is `cursor >= moves.length` and not `===`.
     const stale: GameSnapshot = {
+      learnerSide: 'w',
       moves: [], cursor: 3, status: { kind: 'resigned', winner: 'b' }, resignedBy: 'w',
     };
     expect(reduce(stale, uci('e2e4'))).toBe(stale);
@@ -533,6 +534,7 @@ describe('gameAt', () => {
     // stale cursor. `gameAt` is called on the way to *rendering*, so it must
     // degrade to the longest playable prefix rather than throw.
     const stale: GameSnapshot = {
+      learnerSide: 'w',
       moves: [], cursor: 3, status: { kind: 'playing', check: false }, resignedBy: null,
     };
     expect(gameAt(stale).fen()).toBe(START_FEN);
@@ -559,6 +561,7 @@ describe('gameAt', () => {
     // A hand-built snapshot is still a usable snapshot: the module's derived
     // values must not depend on how the snapshot was made.
     const handBuilt: GameSnapshot = {
+      learnerSide: 'w',
       moves: [], cursor: 0, status: { kind: 'fiftyMove' }, resignedBy: null,
     };
     expect(isGameOver(handBuilt.status)).toBe(true);

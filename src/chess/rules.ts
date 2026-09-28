@@ -22,6 +22,17 @@ export function newGame(): Chess {
   return new Chess();
 }
 
+/** A game from a FEN, for an exercise that does not start at move zero.
+ *
+ * The one caveat is the same one `Captured` documents and cannot detect: a
+ * FEN-loaded `Chess` has no move history, so anything read from `history()` —
+ * the captured pieces — comes back empty while the material count, read from
+ * the board, is correct. That is a wrong answer with no error attached, so a
+ * caller that needs captures must replay a move list instead. */
+export function gameFromFen(fen: string): Chess {
+  return new Chess(fen);
+}
+
 export function legalMoves(game: Chess, from?: Square): string[] {
   return from !== undefined ? game.moves({ square: from as ChessSquare }) : game.moves();
 }

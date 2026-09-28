@@ -166,8 +166,15 @@ export function useGame(): GameApi {
   const reviewing = isReviewing(snapshot);
   const engineDisabled = engine.status === 'error';
   const engineAvailable = engine.available;
-  /** White: the side the learner owns. A "play as Black" mode would change this. */
-  const learnerToMove = game.turn() === 'w';
+  /**
+   * Whose turn it is *for the learner*. Read from the snapshot's learner side
+   * rather than hardcoded to White, so an exercise with a Black learner schedules
+   * the engine as White and leaves the input gate open on the right turns. Both
+   * were `'w'` only because the learner was assumed to be White in two places
+   * that had nothing to do with each other, which is the failure mode this field
+   * exists to remove.
+   */
+  const learnerToMove = game.turn() === snapshot.learnerSide;
   /** The position on screen is the live one and the game has not ended. */
   const playable = !gameOver && !reviewing;
   const playerTurn = playable && learnerToMove;

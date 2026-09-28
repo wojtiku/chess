@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { pieceName, srcFor } from '../Board/pieces';
+import type { Side } from '../../chess/types';
 import './PromotionPicker.css';
 
 export interface PromotionPickerProps {
@@ -7,6 +8,13 @@ export interface PromotionPickerProps {
   square: string;
   onSelect: (promotion: 'q' | 'r' | 'b' | 'n') => void;
   onCancel: () => void;
+  /**
+   * Whose pawn is promoting. Release 1 only ever has a White learner, so this
+   * defaults to 'w' — but a picker hardcoded to White shows the *opponent's*
+   * artwork the moment a Black learner exists, with no error to notice it by.
+   * The learner picks a piece and their own pawn becomes the wrong colour.
+   */
+  colour?: Side;
 }
 
 /**
@@ -31,7 +39,12 @@ const OPTIONS: ReadonlyArray<'q' | 'r' | 'b' | 'n'> = ['q', 'r', 'b', 'n'];
  * and no focus trap — but Escape does cancel (on the window, so it works wherever
  * focus has got to), the first option takes focus, and there is a visible cancel
  * button so the popover is escapable without knowing the keyboard shortcut. */
-export default function PromotionPicker({ square, onSelect, onCancel }: PromotionPickerProps) {
+export default function PromotionPicker({
+  square,
+  onSelect,
+  onCancel,
+  colour = 'w',
+}: PromotionPickerProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,13 +74,14 @@ export default function PromotionPicker({ square, onSelect, onCancel }: Promotio
           onClick={() => onSelect(promotion)}
           aria-label={`Promote to ${pieceName(promotion)}`}
         >
-          {/* The learner promotes to a piece of their own colour — this app gives
-              the learner White, and the board is the only thing that knows that.
-              White's artwork, then, in white's outline colour, and `alt=""` because
-              the button's own label already names the piece. */}
+          {/* The learner promotes to a piece of their OWN colour, which is the
+              colour of the pawn arriving on the last rank. The label names the
+              piece and not the colour, because the artwork already carries it
+              and "promote to black queen" reads as the wrong instruction.
+              `alt=""` because the button's own label already names the piece. */}
           <img
             className="promotion-piece"
-            src={srcFor(promotion, 'w')}
+            src={srcFor(promotion, colour)}
             alt=""
             aria-hidden="true"
             draggable={false}

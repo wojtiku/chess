@@ -226,15 +226,43 @@ export interface CapturedProps {
    * warning and no failed test. `Captured.test.tsx` pins that exact symptom so the
    * precondition stays true in executable form rather than only in prose.
    *
-   * There is no runtime check for it. A `Chess` carries no flag saying whether it
-   * was replayed or loaded, and refusing to render would mean guessing; the honest
-   * options are to document the contract (here) or to widen the prop to the move
-   * list itself, which is Task 10's to decide.
+   * **This is now checked at runtime.** A `Chess` carries no flag saying whether it
+   * was replayed or loaded, so the panel infers it from the shape of the two
+   * sources disagreeing: material is non-zero while the history is empty. That
+   * combination is unreachable by replaying, because reaching a position with a
+   * material advantage necessarily involved a capture, and a capture is a move.
+   *
+   * The cleaner fix is to widen the prop to the move list, which is a larger change
+   * than this release wants. The cheap fix is still worth having, and it is the
+   * difference between a wrong number and a visible notice: an exercise that starts
+   * from a FEN would otherwise show "+1" beside no pieces and say nothing was
+   * taken. `Captured.replay.test.tsx` covers the inference and the notice.
    */
   game: Chess;
 }
 
+/** Whether the two halves of this panel can be trusted to agree.
+ *
+ *  `materialDiff` reads the board and is correct for any position. `capturedBy`
+ *  reads the move history and is empty for a FEN-loaded game. So a non-zero
+ *  material edge with an empty history is the signature of a position that was
+ *  loaded rather than replayed, and it is the one case where rendering the
+ *  material number on its own would be actively misleading. */
+function describesLoadedPosition(game: Chess): boolean {
+  return game.history({ verbose: true }).length === 0 && materialDiff(game) !== 0;
+}
+
 export default function Captured({ game }: CapturedProps) {
+  if (describesLoadedPosition(game)) {
+    return (
+      <div className="captured" data-testid="captured-unreplayable">
+        <p className="captured-note">
+          This position was loaded rather than played, so there is no move history
+          to count captures from.
+        </p>
+      </div>
+    );
+  }
   const taken = capturedBy(game);
   const diff = materialDiff(game);
   return (

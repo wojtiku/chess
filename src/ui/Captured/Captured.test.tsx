@@ -234,27 +234,25 @@ describe('Captured', () => {
     expect(screen.getByTestId('captured-advantage-w').textContent).toBe('+9');
   });
 
-  it('shows a correct material number beside empty lists for a game loaded from a FEN', () => {
-    // THE VIOLATING CALLER, asserted rather than only documented. This is exactly
-    // what `CapturedProps.game` warns about: a bare `new Chess(fen)` has an empty
-    // move history, so the capture lists are empty while the board-derived material
-    // number stays perfectly correct. The result is a wrong panel with no error and
-    // no warning, which is why the precondition lives on the prop.
+  it('refuses to draw a material number it cannot account for, for a FEN-loaded game', () => {
+    // This test used to assert the opposite: that a bare `new Chess(fen)` renders
+    // `+1` beside two empty capture lists, on the grounds that the precondition
+    // lived on the caller and a documented contract was enough.
+    //
+    // It is not enough. The panel was asked "what has been taken" and was about to
+    // answer "nothing, and also you are up a pawn" with no error anywhere — and the
+    // inventory found that this becomes reachable the moment an exercise starts
+    // from a FEN, which is the next thing this app is for. The behaviour is now
+    // checked, so the wrong number never reaches the screen.
     //
     // The FEN is the position after 1.e4 d5 2.exd5, so Black really is a pawn down.
     const loaded = new Chess('rnbqkbnr/ppp1pppp/8/3P4/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2');
     expect(loaded.history()).toEqual([]);
     render(<Captured game={loaded} />);
-    expect(drawn('w')).toEqual([]);
-    expect(drawn('b')).toEqual([]);
-    expect(screen.getByTestId('captured-advantage-w').textContent).toBe('+1');
-    // The spoken label states the contradiction outright — "nothing" taken, and yet
-    // up a pawn — which is the loudest this failure can be. A screen-reader user
-    // hears it immediately; a sighted user sees `+1` beside an empty row.
-    expect(screen.getByTestId('captured-by-w')).toHaveAttribute(
-      'aria-label',
-      'Captured by White: nothing. White is up 1 point of material.',
-    );
+    expect(screen.getByTestId('captured-unreplayable')).toBeInTheDocument();
+    // The contradiction is not merely hidden, it is absent: no `+1` at all.
+    expect(screen.queryByTestId('captured-advantage-w')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('captured-by-w')).not.toBeInTheDocument();
 
     // ...and the same position handed over REPLAYED reads correctly, which is what
     // makes this a precondition on the caller rather than a defect in the panel.
