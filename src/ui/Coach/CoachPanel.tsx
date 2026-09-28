@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { PROVIDERS, clearProvider, loadProvider, maskKey, saveProvider, type ProviderId } from './providerKey';
+import { AskPanel } from './AskPanel';
 import './CoachPanel.css';
 
 /**
@@ -107,14 +108,16 @@ export default function CoachPanel() {
               {notice}
             </p>
           )}
-          <button
-            type="button"
-            data-testid="coach-key-save"
-            onClick={save}
-            disabled={key.trim().length === 0}
-          >
-            Save key
-          </button>
+          <div className="coach-key-actions">
+            <button
+              type="button"
+              data-testid="coach-key-save"
+              onClick={save}
+              disabled={key.trim().length === 0}
+            >
+              Save key
+            </button>
+          </div>
         </div>
       ) : (
         <div className="coach-saved" data-testid="coach-saved">
@@ -124,8 +127,13 @@ export default function CoachPanel() {
             <span data-testid="coach-key-masked">
               ({maskKey(saved.key)}, {PROVIDERS.find((p) => p.id === saved.provider)?.label ?? saved.provider})
             </span>
-            . The coach is not wired to a provider yet, so there is nothing to ask it.
+            . Remove it at any time. Nothing is sent anywhere except to that provider, and only when
+            you ask a question.
           </p>
+          <AskPanel provider={saved} />
+          {/* The key is removable whenever a key is stored, not only after a
+              failed call. A key the learner cannot get rid of without first
+              breaking something is a key they are stuck with. */}
           <button type="button" data-testid="coach-key-clear" onClick={forget}>
             Remove key
           </button>
