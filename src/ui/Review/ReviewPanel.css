@@ -15,14 +15,27 @@
 
 .review-empty {
   margin: 0;
-  background: var(--panel);
-  border: 1px solid var(--edge);
-  border-radius: 4px;
-  padding: 0.875rem;
+  border-top: 1px solid var(--edge);
+  padding: 1.5rem 0;
   font-size: 0.8125rem;
   line-height: 1.45;
   color: var(--muted);
 }
+
+.review-lede { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.review-start {
+  align-self: flex-start;
+  padding: 9px 14px;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  background: var(--panel-raised);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.review-start:hover { background: var(--panel-hover); border-color: var(--brass-dim); }
+.review-start:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 
 .review-queue {
   margin: 0;

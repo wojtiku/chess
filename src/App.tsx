@@ -17,15 +17,13 @@ import EngineStatusView from './ui/EngineStatus/EngineStatus';
 import Quickstart from './ui/Quickstart/Quickstart';
 import CoachPanel from './ui/Coach/CoachPanel';
 import ReviewPanel from './ui/Review/ReviewPanel';
-import { ModeSwitcher, type Mode } from './ui/TutorShell';
+import { BoardWorkspace, type Mode } from './ui/TutorShell';
 import './App.css';
 
 export default function App() {
   const g = useGame();
-  // One piece of state for the mode. No router and no landing screen: the
-  // practice board is what already works and what the learner came for, so the
-  // learning modes hang off it rather than replacing it. See the map's settled
-  // decision on the app's shape.
+  // One sidebar selection, no router or landing screen. Learn temporarily draws
+  // an exercise board; useGame stays mounted so returning restores the game.
   const [mode, setMode] = useState<Mode>('play');
   const onMode = useCallback((m: Mode) => setMode(m), []);
   /** Everything that needs the engine is off, and the board is local two-player. */
@@ -93,33 +91,20 @@ export default function App() {
       <header className="app-header">
         <h1>Chess Practice Board</h1>
         <p className="app-sub">You play White. Take your time.</p>
-        <ModeSwitcher mode={mode} onChange={onMode} />
       </header>
 
       {mode === 'learn' && (
-        <div className="app-main-single">
           <Quickstart
             onFinished={() => setMode('review')}
             onCancel={() => setMode('play')}
+            renderLayout={(board, panel) => (
+              <BoardWorkspace board={board} mode={mode} onChange={onMode}>{panel}</BoardWorkspace>
+            )}
           />
-        </div>
       )}
 
-      {mode === 'coach' && (
-        <div className="app-main-single">
-          <CoachPanel />
-        </div>
-      )}
-
-      {mode === 'review' && (
-        <div className="app-main-single">
-          <ReviewPanel />
-        </div>
-      )}
-
-      {mode === 'play' && (
-      <div className="app-main">
-        <div className="app-board">
+      {mode !== 'learn' && (
+      <BoardWorkspace mode={mode} onChange={onMode} board={<>
           <EvalBar
             sideToMoveCp={shown?.scoreCp}
             sideToMoveMate={shown?.scoreMate}
@@ -139,9 +124,14 @@ export default function App() {
             arrows={g.hint === null ? [] : [{ from: g.hint.uci.slice(0, 2), to: g.hint.uci.slice(2, 4) }]}
             onMove={g.play}
           />
-        </div>
-
-        <aside className="app-panel">
+        </>}>
+          {mode === 'coach' && <CoachPanel fen={drawnFen} />}
+          {mode === 'review' && <ReviewPanel onLearn={() => setMode('learn')} />}
+          {mode === 'play' && <>
+          <div className="app-panel-heading">
+            <h2>Your game</h2>
+            <p>Play, explore a move, or revisit the position.</p>
+          </div>
           <ResultBanner status={g.snapshot.status} />
           <EngineStatusView status={g.engineStatus} error={g.engineError} />
           <Captured game={g.game} />
@@ -200,8 +190,8 @@ export default function App() {
             onChange={g.setSettings}
             disabled={engineUnavailable}
           />
-        </aside>
-      </div>
+          </>}
+      </BoardWorkspace>
       )}
     </div>
   );

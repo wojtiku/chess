@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 
@@ -41,6 +41,29 @@ describe('App: modes', () => {
     for (const name of [/play/i, /learn/i, /coach/i, /review/i]) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
     }
+  });
+
+  it('keeps navigation inside the sidebar and the game board beside Coach and Review', async () => {
+    const { user } = setup();
+    render(<App />);
+    const board = screen.getByRole('grid', { name: 'Chess board' });
+    for (const mode of ['coach', 'review', 'play']) {
+      await user.click(screen.getByTestId(`mode-${mode}`));
+      expect(screen.getByRole('grid', { name: 'Chess board' })).toBe(board);
+      expect(within(screen.getByRole('complementary')).getByRole('navigation', { name: 'Mode' })).toBeInTheDocument();
+    }
+  });
+
+  it('uses one exercise board in Learn and restores the game on return', async () => {
+    const { user } = setup();
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: 'e2, white pawn' }));
+    await user.click(screen.getByRole('button', { name: 'e4, empty' }));
+    await user.click(screen.getByTestId('mode-learn'));
+    expect(screen.getAllByRole('grid', { name: 'Chess board' })).toHaveLength(1);
+    expect(within(screen.getByRole('complementary')).getByRole('group', { name: 'Quickstart' })).toBeInTheDocument();
+    await user.click(screen.getByTestId('mode-play'));
+    expect(screen.getByRole('button', { name: 'e4, white pawn' })).toBeInTheDocument();
   });
 
   it('opens the quickstart from Learn, with no key and no network', async () => {

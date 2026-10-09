@@ -21,7 +21,7 @@ import './CoachPanel.css';
  * Disclosure is here and not in a dialog they can dismiss, because the position
  * includes the mistakes they are about to ask about.
  */
-export default function CoachPanel() {
+export default function CoachPanel({ fen }: { fen?: string }) {
   const [key, setKey] = useState('');
   // Read on MOUNT, not on write. The panel unmounts whenever the mode changes,
   // so a value held only in component state was lost every time the learner
@@ -54,7 +54,7 @@ export default function CoachPanel() {
     <div className="coach">
       <h2>Ask the coach</h2>
       <p className="coach-lede">
-        The coach explains a position in plain words. It never decides anything about chess — every
+        Ask about the position on the board. The coach explains it in plain words — every
         fact it mentions is checked by the app first.
       </p>
 
@@ -130,7 +130,8 @@ export default function CoachPanel() {
             . Remove it at any time. Nothing is sent anywhere except to that provider, and only when
             you ask a question.
           </p>
-          <AskPanel provider={saved} />
+          {/* A new position discards both old answers and in-flight UI state. */}
+          <AskPanel key={fen} provider={saved} fen={fen} />
           {/* The key is removable whenever a key is stored, not only after a
               failed call. A key the learner cannot get rid of without first
               breaking something is a key they are stuck with. */}

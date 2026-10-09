@@ -41,6 +41,32 @@ describe('CoachPanel: asking', () => {
     expect(screen.queryByRole('textbox', { name: /question/i })).not.toBeInTheDocument();
   });
 
+  it('uses the displayed position and clears its answer when that position changes', async () => {
+    withKey();
+    vi.stubGlobal('fetch', okFetch('Nothing is under attack.'));
+    const user = userEvent.setup();
+    const { rerender } = render(<CoachPanel fen="4k3/8/8/8/8/8/8/4K3 w - - 0 1" />);
+    await user.click(screen.getByTestId('coach-ask-hanging'));
+    expect(await screen.findByTestId('coach-facts')).toHaveTextContent('Material: White 0 - Black 0');
+    rerender(<CoachPanel fen="4k3/8/8/8/8/8/P7/4K3 w - - 0 1" />);
+    expect(screen.queryByTestId('coach-facts')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('coach-ask-hanging'));
+    expect(await screen.findByTestId('coach-facts')).toHaveTextContent('Material: White 1 - Black 0');
+  });
+
+  it('does not attach an old in-flight response to a new position', async () => {
+    withKey();
+    let release: (response: Response) => void = () => {};
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => { release = resolve; })));
+    const user = userEvent.setup();
+    const { rerender } = render(<CoachPanel fen="4k3/8/8/8/8/8/8/4K3 w - - 0 1" />);
+    await user.click(screen.getByTestId('coach-ask-hanging'));
+    rerender(<CoachPanel fen="4k3/8/8/8/8/8/P7/4K3 w - - 0 1" />);
+    release(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'Nothing is under attack.' }] } }] }), { status: 200 }));
+    await waitFor(() => expect(screen.getByTestId('coach-ask-hanging')).toBeEnabled());
+    expect(screen.queryByTestId('coach-facts')).not.toBeInTheDocument();
+  });
+
   it('shows a spinner while waiting, because that is what was asked for', async () => {
     withKey();
     let release: (r: Response) => void = () => {};

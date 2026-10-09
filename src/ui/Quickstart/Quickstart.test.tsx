@@ -21,7 +21,7 @@ describe('Quickstart', () => {
     // Both the instruction and the purpose are ours and fixed. Nothing here is
     // model-written, so a learner is never shown a phrase the app cannot check.
     setup();
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(QUICKSTART[0]!.instruction);
+    expect(screen.getByRole('heading', { level: 3 })).toHaveTextContent(QUICKSTART[0]!.instruction);
     expect(screen.getByText(QUICKSTART[0]!.purpose)).toBeInTheDocument();
   });
 

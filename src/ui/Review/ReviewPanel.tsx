@@ -10,17 +10,22 @@ import './ReviewPanel.css';
  * built from mistakes, not that nothing has happened *yet* in a way that implies
  * something is loading.
  */
-export default function ReviewPanel({ record }: { record?: { reviewItems: Array<{ id: string; conceptId: string }> } }) {
+export default function ReviewPanel({ record, onLearn }: {
+  record?: { reviewItems: Array<{ id: string; conceptId: string }> };
+  onLearn?: () => void;
+}) {
   const queue = record ? openQueue(record as never) : [];
 
   if (queue.length === 0) {
     return (
       <div className="review">
         <h2>Review</h2>
+        <p className="review-lede">Return to a position with fresh eyes.</p>
         <p className="review-empty" data-testid="review-empty">
           Nothing to review yet. Positions where you made a mistake collect here, so you can try them
           again when you have a moment.
         </p>
+        {onLearn && <button className="review-start" type="button" onClick={onLearn}>Learn the basics</button>}
       </div>
     );
   }

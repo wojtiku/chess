@@ -1,109 +1,72 @@
-/* Layout only. Every colour comes from `styles/theme.css`, which holds the one
-   palette this app has. */
-.app { max-width: 1040px; margin: 0 auto; padding: 16px; }
-
-/* The header is a single left-aligned column. It used to be a two-column grid with
-   a `1fr auto` split, because the theme switch sat in the second column and
-   needed somewhere to go. With the switch gone the second column was an empty
-   track, so the grid is gone too — a title and a line under it are a block, and
-   saying so is one rule instead of four. */
-.app-header { margin-bottom: 16px; }
-
-/* The title is set in the score-sheet serif at the same size as the body's, and
-   only by its weight and colour. A display face at 2x would be the generic move;
-   this is a study, not a poster, and the board is the thing worth looking at. */
+/* A board on the table, with one quiet study surface alongside it. */
+.app { max-width: 1080px; margin: 0 auto; padding: 24px 16px; }
+.app-header { margin-bottom: 24px; }
 .app-header h1 {
-  margin: 0 0 2px;
+  margin: 0 0 4px;
   font-family: var(--font-score);
-  font-size: 21px;
+  font-size: 23px;
   font-weight: 600;
-  letter-spacing: 0.01em;
 }
 .app-sub { margin: 0; font-size: 13px; color: var(--muted); }
-
-.app-main { display: flex; gap: 20px; align-items: flex-start; }
-.app-board { display: flex; gap: 8px; align-items: stretch; }
-.app-panel {
-  display: flex; flex-direction: column; gap: 14px;
-  flex: 1; min-width: 260px;
+.app-main { display: flex; gap: 24px; align-items: flex-start; }
+/* Reserve the evaluation gutter even for lessons, which intentionally have no
+   score. Otherwise Learn lends those 42px to the panel and resizes every tab. */
+.app-board { display: grid; grid-template-columns: 34px auto; gap: 8px; align-items: stretch; flex-shrink: 0; }
+.app-board > .quickstart-board { grid-column: 2; }
+.app-sidebar {
+  flex: 1;
+  min-width: 280px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  overflow: hidden;
 }
+.app-panel { display: flex; flex-direction: column; gap: 18px; padding: 20px; min-width: 0; }
+.app-panel-heading h2,
+.app-panel .coach h2,
+.app-panel .review h2,
+.quickstart-title {
+  margin: 0;
+  font: 600 22px/1.2 var(--font-score);
+}
+.app-panel-heading p { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
 .app-hints { display: flex; gap: 6px; }
-/* Layout only — the surface, border and highlight of a button are one shared rule
-   in `theme.css`, so every pressable thing in the app looks like it came from the
-   same hand. */
-.app-hints button { flex: 1; padding: 7px 10px; border-radius: 6px; cursor: pointer; font: inherit; }
+.app-hints button { flex: 1; padding: 8px 10px; border-radius: 6px; cursor: pointer; font: inherit; }
 .app-hints button:disabled { opacity: 0.45; cursor: not-allowed; }
 .app-hint-line { margin: 0; font-size: 13px; }
-/* **960, and the number is measured.** This was 860, which was wrong by 100px and
-   broke every viewport in the band below it. The side-by-side layout needs, side by
-   side: a 560px board, 34px of eval bar, an 8px gap, ~10px of rank gutter, a 20px
-   gap, the panel's own 260px `min-width`, and 32px of page padding — 924px. Below
-   960 the panel stacks under the board; at 960 and above it sits beside it, with
-   36px to spare.
 
-   With the old 860 the layout stayed side-by-side from 860 to 923, where it needed
-   924 — so `document.scrollWidth` was 924 in a 900px viewport and the page scrolled
-   sideways. Nothing caught it because the E2E checked a 390px phone and a 1440px
-   desktop and nothing in between. */
-@media (max-width: 960px) {
-  .app-main { flex-direction: column; align-items: center; }
-  .app-panel { width: 100%; }
-}
-
-/* --- the mode switcher -------------------------------------------------------
-   Four buttons under the title. Styled as a row of quiet surfaces with the
-   current one picked out by the brass edge rather than a filled background: the
-   app spends brass on the one thing it wants the eye to land on, and "you are
-   here" is not that — a filled button in the header would out-shout the board. */
-
-.app-modes {
-  display: flex;
-  gap: 0.25rem;
-  margin-top: 0.5rem;
-}
-
+/* Navigation belongs to the panel it changes, not to the page title. */
+.app-modes { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--edge); padding: 6px 6px 0; }
 .app-modes button {
   background: transparent;
   color: var(--muted);
-  border: 1px solid transparent;
+  border: 0;
   border-bottom: 2px solid transparent;
-  border-radius: 3px 3px 0 0;
-  padding: 0.25rem 0.625rem;
-  font: inherit;
-  font-size: 0.8125rem;
+  border-radius: 4px 4px 0 0;
+  padding: 12px 4px;
+  font: 500 13px var(--font-ui);
   cursor: pointer;
-  transition: color 220ms ease, border-color 220ms ease;
+  transition: color 120ms ease, background-color 120ms ease;
 }
+.app-modes button:hover { color: var(--fg); background: var(--panel-raised); }
+.app-modes button[aria-current='page'] { color: var(--brass); border-bottom-color: var(--brass); background: var(--brass-soft); }
+.app-modes button:focus-visible { outline: 2px solid var(--brass); outline-offset: -3px; }
 
-.app-modes button:hover {
-  color: var(--fg);
-  background: var(--panel);
-}
+/* The lesson's instruction lives in the same sidebar, not a nested card. */
+.app-panel .quickstart-panel { background: transparent; border: 0; padding: 0; gap: 16px; }
+.app-panel .quickstart-progress { text-transform: none; letter-spacing: 0; font: 13px var(--font-ui); }
+.app-panel .quickstart-instruction { font-size: 17px; }
+.app-panel .quickstart-purpose { line-height: 1.6; }
+.app-panel .quickstart-actions { margin-top: 8px; }
 
-/* The current mode: brass underline and full-contrast text. `aria-current` is set
-   too, so this is announced and not only seen. */
-.app-modes button[aria-current='page'] {
-  color: var(--fg);
-  border-bottom-color: var(--brass);
+/* Board + eval + gutter + gap + sidebar + padding fit comfortably above 980px. */
+@media (max-width: 980px) {
+  .app-main { flex-direction: column; align-items: center; gap: 20px; }
+  .app-sidebar { width: 100%; max-width: 604px; min-width: 0; }
 }
-
-.app-modes button:focus-visible {
-  outline: 2px solid var(--brass);
-  outline-offset: 1px;
+@media (max-width: 480px) {
+  .app { padding-top: 16px; }
+  .app-header { margin-bottom: 18px; }
+  .app-panel { padding: 18px 16px; }
 }
-
-/* A single full-width column, for the modes that are a panel rather than a board
-   beside a panel. The learning modes have no board of their own yet, so they get
-   the whole area rather than an empty left half. */
-.app-main-single {
-  display: flex;
-  flex-direction: column;
-  padding: 1rem;
-  overflow-y: auto;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .app-modes button {
-    transition: none;
-  }
-}
+@media (prefers-reduced-motion: reduce) { .app-modes button { transition: none; } }

@@ -5,13 +5,7 @@ import { FACT_QUESTIONS, type CoachQuestion } from './questions';
 import type { StoredProvider } from './providerKey';
 import './CoachPanel.css';
 
-/** Which position the coach is talking about.
- *
- *  Hardcoded to the start position for now, because the coach is not yet wired
- *  to a live game — that is the exercise runner's job, and guessing here would
- *  mean sending a position that has nothing to do with what the learner sees. The
- *  prop is here so that change is a wiring job and not a rewrite.
- */
+/** A standalone demo fallback. The app always supplies the displayed board's FEN. */
 const DEMO_FEN = 'r1bq1rk1/ppp2ppp/2np1n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQ1RK1 w - - 0 9';
 
 /**

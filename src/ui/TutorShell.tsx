@@ -1,10 +1,7 @@
-// The mode switcher: Play, Learn, Coach, Review.
-//
-// The app that existed before this was one thing — play White against the engine
-// — and it is still that, on arrival. The learning modes hang off it rather than
-// replacing it, because the practice board is the thing that already works and
-// the thing the learner came for. No landing screen and no router: a mode is one
-// piece of state, and a mode switch that can fail is one that will.
+// The shared board workspace and its sidebar navigation. Play remains the default;
+// selecting a study panel does not discard the game.
+
+import type { ReactNode } from 'react';
 
 export type Mode = 'play' | 'learn' | 'coach' | 'review';
 
@@ -41,5 +38,23 @@ export function ModeSwitcher({
         </button>
       ))}
     </nav>
+  );
+}
+
+/** One board and one study panel, including when the board is a lesson. */
+export function BoardWorkspace({ board, children, mode, onChange }: {
+  board: ReactNode;
+  children: ReactNode;
+  mode: Mode;
+  onChange: (mode: Mode) => void;
+}) {
+  return (
+    <main className="app-main">
+      <div className="app-board">{board}</div>
+      <aside className="app-sidebar" aria-label={`${MODES.find((m) => m.id === mode)?.label} panel`}>
+        <ModeSwitcher mode={mode} onChange={onChange} />
+        <div className="app-panel">{children}</div>
+      </aside>
+    </main>
   );
 }

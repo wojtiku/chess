@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Chess } from 'chess.js';
 import { QUICKSTART, checkQuickstartStep, type QuickstartOutcome, type QuickstartStep } from '../../teaching/quickstart';
 import Board from '../Board/Board';
@@ -9,6 +9,7 @@ export interface QuickstartProps {
   /** The learner is White in release 1; the board orients to them. */
   onFinished: () => void;
   onCancel: () => void;
+  renderLayout?: (board: ReactNode, panel: ReactNode) => ReactNode;
 }
 
 /**
@@ -26,7 +27,7 @@ export interface QuickstartProps {
  * it. The learner is told what to do and why, and both are ours — no model is
  * involved in saying anything here.
  */
-export default function Quickstart({ onFinished, onCancel }: QuickstartProps) {
+export default function Quickstart({ onFinished, onCancel, renderLayout }: QuickstartProps) {
   const [index, setIndex] = useState(0);
   const [attempt, setAttempt] = useState<{ from: string; to: string; promotion?: 'q' | 'r' | 'b' | 'n' } | null>(null);
   const [outcome, setOutcome] = useState<QuickstartOutcome | null>(null);
@@ -70,17 +71,19 @@ export default function Quickstart({ onFinished, onCancel }: QuickstartProps) {
     ? [{ from: attempt.from, to: attempt.to, role: outcome === 'solved' ? 'better' : 'played' }]
     : [];
 
-  return (
-    <div className="quickstart">
+  const panel = (
       <div className="quickstart-panel" role="group" aria-label="Quickstart">
+        <h2 className="quickstart-title">Learn the basics</h2>
         <p className="quickstart-progress" data-testid="quickstart-progress">
           Step {index + 1} of {QUICKSTART.length}
         </p>
 
-        <h2 className="quickstart-instruction">{step.instruction}</h2>
+        <h3 className="quickstart-instruction">{step.instruction}</h3>
         <p className="quickstart-purpose">{step.purpose}</p>
 
-        {outcome === null && <p className="quickstart-goal">{step.goal ?? step.instruction}</p>}
+        {outcome === null && step.goal && step.goal !== step.instruction && (
+          <p className="quickstart-goal">{step.goal}</p>
+        )}
 
         {outcome !== null && <Feedback outcome={outcome} step={step} />}
 
@@ -113,12 +116,10 @@ export default function Quickstart({ onFinished, onCancel }: QuickstartProps) {
           ))}
         </ol>
       </div>
+  );
 
-      {/*
-        While a wrong answer is on screen the board is inert: the move already
-        happened and the learner is being told why it was a mistake. Letting them
-        play again over the top of that is how the mark disappears.
-      */}
+  // Feedback locks the exercise board until the learner advances or exits.
+  const board = (
       <div className="quickstart-board" data-testid="quickstart-board">
         <Board
           game={game}
@@ -129,8 +130,8 @@ export default function Quickstart({ onFinished, onCancel }: QuickstartProps) {
           onMove={onMove}
         />
       </div>
-    </div>
   );
+  return renderLayout ? renderLayout(board, panel) : <div className="quickstart">{panel}{board}</div>;
 }
 
 function Feedback({ outcome, step }: { outcome: QuickstartOutcome; step: QuickstartStep }) {
