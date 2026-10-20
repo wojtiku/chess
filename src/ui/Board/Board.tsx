@@ -1,7 +1,7 @@
-import { useCallback, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, KeyboardEvent } from 'react';
 import type { Chess } from '../../chess/rules';
-import { legalMovesVerbose, parsePromotion } from '../../chess/rules';
+import { isKingSafetyRestricted, legalMovesVerbose, parsePromotion } from '../../chess/rules';
 import { displaySquares, stepSquare, type ArrowKey, type Orientation } from './squares';
 import { arrowEnds, arrowStyle, squareCentre, type BoardArrow } from './arrows';
 import { pieceLabel, pieceSrc } from './pieces';
@@ -131,6 +131,12 @@ export default function Board({
 }: BoardProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
+  const [kingPulse, setKingPulse] = useState<{ square: string; position: string; sequence: number } | null>(null);
+  useEffect(() => {
+    if (kingPulse === null) return;
+    const timeout = window.setTimeout(() => setKingPulse(null), 1000);
+    return () => window.clearTimeout(timeout);
+  }, [kingPulse]);
   const [pendingPromotion, setPendingPromotion] = useState<{ from: string; to: string } | null>(null);
   /** The one square in the grid that Tab can reach; the arrow keys move it. */
   const [tabStop, setTabStop] = useState<string | null>(null);
@@ -170,7 +176,18 @@ export default function Board({
   const clearSelection = useCallback(() => {
     setSelected(null);
     setDragging(null);
+    setKingPulse(null);
   }, []);
+
+  const selectPiece = (square: string) => {
+    setSelected(square);
+    const king = findKing(pieces, turn);
+    if (king !== null && isKingSafetyRestricted(game, square)) {
+      setKingPulse((previous) => ({ square: king, position, sequence: (previous?.sequence ?? 0) + 1 }));
+    } else {
+      setKingPulse(null);
+    }
+  };
 
   /** Offer `from` to `to`. Never applies the move: the parent does that. */
   const attempt = useCallback(
@@ -208,11 +225,12 @@ export default function Board({
     }
     const piece = pieces.get(square);
     if (piece !== undefined && piece.color === turn) {
-      setSelected(square === selected ? null : square);
+      if (square === selected) clearSelection();
+      else selectPiece(square);
       return;
     }
     // An empty square, or the opponent's: nothing to pick up, so the selection goes.
-    setSelected(null);
+    clearSelection();
   };
 
   const onSquareKeyDown = (event: KeyboardEvent, square: string) => {
@@ -330,10 +348,22 @@ export default function Board({
                 onDragStart={(event) => {
                   // Some browsers refuse to start a drag whose payload is empty.
                   event.dataTransfer?.setData('text/plain', square);
+                  if (!interactive || pendingPromotion !== null || piece?.color !== turn) {
+                    event.preventDefault();
+                    return;
+                  }
+                  selectPiece(square);
                   setDragging(square);
                 }}
                 onDragEnd={() => setDragging(null)}
               >
+                {kingPulse?.square === square && kingPulse.position === position && (
+                  <span
+                    key={kingPulse.sequence}
+                    className="king-safety-pulse"
+                    aria-hidden="true"
+                  />
+                )}
                 {/*
                   The piece is an image with an empty `alt`, and the square's own
                   `aria-label` is what names it. An `alt` of "white pawn" would be

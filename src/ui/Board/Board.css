@@ -161,6 +161,32 @@
   background-image: radial-gradient(circle at 50% 50%, transparent 35%, var(--check-glow) 100%);
 }
 
+/* Separate from the persistent check mark: fading the warning must never fade
+   a real check, the piece artwork, or the selection ring. */
+.king-safety-pulse {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 50%, transparent 35%, var(--check-glow) 100%);
+  animation: king-safety-pulse 1s ease-out both;
+}
+
+@keyframes king-safety-pulse {
+  0%, 100% { opacity: 0; }
+  30% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .king-safety-pulse {
+    /* A brief static mark instead of a pulse. */
+    animation-name: king-safety-mark;
+  }
+}
+
+@keyframes king-safety-mark {
+  from, to { opacity: 1; }
+}
+
 /* A legal destination that takes nothing: a dot. */
 .square[data-target]::after {
   content: '';

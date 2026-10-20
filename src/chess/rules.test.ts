@@ -1,13 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import { Chess } from 'chess.js';
 import {
-  applyMove, hasSingleLegalMove, legalMoves, sanSequence, statusOf,
+  applyMove, hasSingleLegalMove, isKingSafetyRestricted, legalMoves, sanSequence, statusOf,
   tryApplyMove, uciToMove,
 } from './rules';
 
 const KIWIPETE = 'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1';
 const FORCED = '4k3/8/8/8/8/8/4q3/4K3 w - - 0 1';
 const PROMO = '4k3/P7/8/8/8/8/8/4K3 w - - 0 1';
+
+describe('isKingSafetyRestricted', () => {
+  it.each([
+    ['4r2k/8/8/8/8/8/4N3/4K3 w - - 0 1', 'e2', true],
+    ['4r2k/8/8/8/8/8/4R3/4K3 w - - 0 1', 'e2', true],
+    ['7k/8/8/8/8/8/4N3/4K3 w - - 0 1', 'e2', false],
+    [new Chess().fen(), 'c1', false],
+    [new Chess().fen(), 'e2', false],
+    [new Chess().fen(), 'e7', false],
+    [new Chess().fen(), 'e4', false],
+    ['7k/8/8/r4pPK/8/8/8/8 w - f6 0 1', 'g5', true],
+    ['7k/8/8/8/8/4r3/8/4K3 w - - 0 1', 'e1', true],
+    ['4k3/4n3/8/8/8/8/8/4R2K b - - 0 1', 'e7', true],
+  ])('detects restrictions without mutating %s (%s)', (fen, square, expected) => {
+    const game = new Chess(fen);
+    const before = game.fen();
+    expect(isKingSafetyRestricted(game, square)).toBe(expected);
+    expect(game.fen()).toBe(before);
+    expect(game.history()).toEqual([]);
+  });
+});
 
 describe('legalMoves', () => {
   it('returns only legal moves for a square', () => {

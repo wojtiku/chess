@@ -60,6 +60,89 @@ const PIECE_ASSETS: Readonly<Record<string, string>> = {
 };
 
 describe('Board', () => {
+  describe('king safety warning', () => {
+    const PINNED = '4r2k/8/8/8/8/8/4N3/4K3 w - - 0 1';
+    const pulse = () => sq('e1').querySelector('.king-safety-pulse');
+
+    it('pulses once on selection, cleans up, and can pulse again', () => {
+      vi.useFakeTimers();
+      try {
+        const { onMove } = setup({ game: new Chess(PINNED) });
+        fireEvent.click(sq('e2'));
+        expect(pulse()).not.toBeNull();
+        expect(sq('e1')).not.toHaveAttribute('data-check');
+        expect(targets()).toHaveLength(0);
+        act(() => vi.advanceTimersByTime(999));
+        expect(pulse()).not.toBeNull();
+        act(() => vi.advanceTimersByTime(1));
+        expect(pulse()).toBeNull();
+        expect(sq('e2')).toHaveAttribute('data-selected');
+        fireEvent.click(sq('e2'));
+        fireEvent.click(sq('e2'));
+        expect(pulse()).not.toBeNull();
+        expect(onMove).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('warns for a partially pinned rook while retaining its legal targets', () => {
+      setup({ game: new Chess('4r2k/8/8/8/8/8/4R3/4K3 w - - 0 1') });
+      fireEvent.click(sq('e2'));
+      expect(pulse()).not.toBeNull();
+      expect(sq('e3')).toHaveAttribute('data-target');
+      expect(sq('d2')).not.toHaveAttribute('data-target');
+    });
+
+    it('supports keyboard selection and starting a drag', () => {
+      setup({ game: new Chess(PINNED) });
+      fireEvent.keyDown(sq('e2'), { key: 'Enter' });
+      expect(pulse()).not.toBeNull();
+      const first = pulse();
+      fireEvent.dragStart(sq('e2'));
+      expect(pulse()).not.toBeNull();
+      expect(pulse()).not.toBe(first);
+    });
+
+    it('does not warn for a merely blocked piece or on hover', () => {
+      setup();
+      fireEvent.mouseOver(sq('c1'));
+      fireEvent.click(sq('c1'));
+      expect(document.querySelector('.king-safety-pulse')).toBeNull();
+    });
+
+    it('does not warn when the board is noninteractive', () => {
+      setup({ game: new Chess(PINNED), interactive: false });
+      fireEvent.click(sq('e2'));
+      fireEvent.dragStart(sq('e2'));
+      expect(pulse()).toBeNull();
+    });
+
+    it('keeps the persistent check mark when a warning ends', () => {
+      vi.useFakeTimers();
+      try {
+        setup({ game: new Chess('4r2k/8/8/8/8/8/3N4/4K3 w - - 0 1') });
+        fireEvent.click(sq('d2'));
+        expect(pulse()).not.toBeNull();
+        act(() => vi.advanceTimersByTime(1000));
+        expect(pulse()).toBeNull();
+        expect(sq('e1')).toHaveAttribute('data-check');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('hides an old warning when the position changes', () => {
+      const game = new Chess(PINNED);
+      const { rerender } = render(<Board game={game} orientation="w" interactive lastMove={null} arrows={[]} onMove={vi.fn()} />);
+      fireEvent.click(sq('e2'));
+      expect(pulse()).not.toBeNull();
+      game.move('Kd1');
+      rerender(<Board game={game} orientation="w" interactive={false} lastMove={null} arrows={[]} onMove={vi.fn()} />);
+      expect(pulse()).toBeNull();
+    });
+  });
+
   describe('rendering', () => {
     it('renders 64 squares inside a named grid', () => {
       setup();
