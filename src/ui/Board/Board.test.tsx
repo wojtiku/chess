@@ -776,14 +776,16 @@ describe('Board', () => {
       expect(onMove).not.toHaveBeenCalled();
     });
 
-    it('anchors the picker to the destination square', async () => {
+    it('anchors the picker near the destination square', async () => {
       const { user } = setup({ game: new Chess(PROMOTION_FEN) });
       await user.click(sq('a7'));
       await user.click(sq('a8'));
       const anchor = document.querySelector('.promotion-anchor') as HTMLElement;
       expect(anchor).not.toBeNull();
-      expect(anchor.style.left).toBe('6.25%');
-      expect(anchor.style.top).toBe('6.25%');
+      // The destination remains the preferred anchor; edge constraints can move
+      // the picker inward. Actual viewport containment is checked in Chromium.
+      expect(anchor.style.left).toContain('6.25%');
+      expect(anchor.style.top).toContain('6.25%');
     });
 
     it('ignores Escape once the promotion is resolved', async () => {

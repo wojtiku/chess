@@ -52,8 +52,14 @@ export function BoardWorkspace({ board, children, mode, onChange }: {
     <main className="app-main">
       <div className="app-board">{board}</div>
       <aside className="app-sidebar" aria-label={`${MODES.find((m) => m.id === mode)?.label} panel`}>
+        <header className="app-header">
+          <h1>Chess Practice Board</h1>
+          <p className="app-sub">You play White. Take your time.</p>
+        </header>
         <ModeSwitcher mode={mode} onChange={onChange} />
-        <div className="app-panel">{children}</div>
+        {/* A newly selected mode starts at its heading, even if the previous
+            panel was scrolled to the end of a long game. */}
+        <div className="app-panel" key={mode}>{children}</div>
       </aside>
     </main>
   );

@@ -88,11 +88,6 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="app-header">
-        <h1>Chess Practice Board</h1>
-        <p className="app-sub">You play White. Take your time.</p>
-      </header>
-
       {mode === 'learn' && (
           <Quickstart
             onFinished={() => setMode('review')}

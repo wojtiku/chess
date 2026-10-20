@@ -16,7 +16,6 @@
    stretch the column, or one castle in move 40 would re-space the whole list. */
 .movelist {
   list-style: none; margin: 0; padding: 0;
-  height: 250px; overflow-y: auto;
   font-family: var(--font-score);
   font-size: 15px;
   /* A hairline under the list, so the block reads as one object rather than as
@@ -46,8 +45,6 @@
    the learner is actually making when they click a move. */
 .movelist-move[aria-current='true'] { background: var(--brass-soft); color: var(--brass); font-weight: 600; }
 .movelist-move:focus-visible { outline: 2px solid var(--brass); }
-/* `width: fit-content` on the list means a short game leaves the rest of the panel
-   empty, and a scrollbar would otherwise hang at the far edge of a 340px column
-   for three moves. The list scrolls when it overflows its own box, which is now
-   only as wide as the moves are. */
-.movelist-empty { color: var(--muted); margin: 0; height: 250px; font-family: var(--font-score); }
+/* History grows with the game; the sidebar owns scrolling. An empty game needs
+   one line, not a reserved block pushing its controls below the fold. */
+.movelist-empty { color: var(--muted); margin: 0; font-family: var(--font-score); }

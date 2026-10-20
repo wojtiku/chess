@@ -1,6 +1,16 @@
-/* A board on the table, with one quiet study surface alongside it. */
-.app { max-width: 1080px; margin: 0 auto; padding: 24px 16px; }
-.app-header { margin-bottom: 24px; }
+/* The workspace owns the board's budget, including the furniture outside its
+   square: 42px for evaluation, 10px for ranks, and 20px below for files/score.
+   The same budget applies to lessons even though their evaluation is hidden. */
+.app {
+  --workspace-padding: 12px;
+  --workspace-gap: 20px;
+  --sidebar-width: 360px;
+  --board-gutter: 52px;
+  --board-footer: 20px;
+  padding: var(--workspace-padding);
+  min-height: 100dvh;
+}
+.app-header { padding: 20px 20px 12px; }
 .app-header h1 {
   margin: 0 0 4px;
   font-family: var(--font-score);
@@ -8,20 +18,46 @@
   font-weight: 600;
 }
 .app-sub { margin: 0; font-size: 13px; color: var(--muted); }
-.app-main { display: flex; gap: 24px; align-items: flex-start; }
+.app-main {
+  /* Resolve the board's width against the app, not against its own content. */
+  --board-size: max(0px, min(
+    calc(100dvh - 2 * var(--workspace-padding) - var(--board-footer)),
+    calc(100vw - 2 * var(--workspace-padding) - var(--board-gutter))
+  ));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--workspace-gap);
+  width: min(100%, max(var(--sidebar-width), calc(var(--board-size) + var(--board-gutter))));
+  margin-inline: auto;
+}
 /* Reserve the evaluation gutter even for lessons, which intentionally have no
    score. Otherwise Learn lends those 42px to the panel and resizes every tab. */
 .app-board { display: grid; grid-template-columns: 34px auto; gap: 8px; align-items: stretch; flex-shrink: 0; }
 .app-board > .quickstart-board { grid-column: 2; }
 .app-sidebar {
-  flex: 1;
-  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
   background: var(--panel);
   border: 1px solid var(--edge);
   border-radius: 8px;
   overflow: hidden;
 }
-.app-panel { display: flex; flex-direction: column; gap: 18px; padding: 20px; min-width: 0; }
+.app-header, .app-modes { flex-shrink: 0; }
+.app-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  min-width: 0;
+  min-height: 0;
+  overflow-wrap: anywhere;
+}
+/* Content keeps its natural height; the panel scrolls rather than squeezing
+   controls or creating a second scroll area inside the move history. */
+.app-panel > * { flex-shrink: 0; }
 .app-panel-heading h2,
 .app-panel .coach h2,
 .app-panel .review h2,
@@ -59,14 +95,24 @@
 .app-panel .quickstart-purpose { line-height: 1.6; }
 .app-panel .quickstart-actions { margin-top: 8px; }
 
-/* Board + eval + gutter + gap + sidebar + padding fit comfortably above 980px. */
-@media (max-width: 980px) {
-  .app-main { flex-direction: column; align-items: center; gap: 20px; }
-  .app-sidebar { width: 100%; max-width: 604px; min-width: 0; }
+/* 320px of board + 52px of furniture + 360px panel + 20px gap + 24px
+   padding. Short landscape windows can use two columns, too. */
+@media (min-width: 776px) {
+  .app-main {
+    --board-size: max(0px, min(
+      calc(100dvh - 2 * var(--workspace-padding) - var(--board-footer)),
+      calc(100vw - 2 * var(--workspace-padding) - var(--board-gutter) - var(--workspace-gap) - var(--sidebar-width))
+    ));
+    display: grid;
+    grid-template-columns: auto var(--sidebar-width);
+    align-items: center;
+    width: max-content;
+  }
+  .app-sidebar { height: calc(100dvh - 2 * var(--workspace-padding)); }
+  .app-panel { overflow-y: auto; flex: 1; scrollbar-gutter: stable; }
 }
 @media (max-width: 480px) {
-  .app { padding-top: 16px; }
-  .app-header { margin-bottom: 18px; }
+  .app-header { padding: 18px 16px 12px; }
   .app-panel { padding: 18px 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .app-modes button { transition: none; } }

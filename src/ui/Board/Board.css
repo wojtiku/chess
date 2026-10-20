@@ -1,10 +1,10 @@
 /* The frame owns the coordinate gutter, so neither the ranks nor the files are
    grid items of `.board` and cannot add a ninth row or column to the 8x8. The
-   rank column is `auto` so it is exactly as wide as one digit. */
+   rank column and footer reserve room for labels at every board size. */
 .board-frame {
   display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-rows: 1fr auto;
+  grid-template-columns: 10px 1fr;
+  grid-template-rows: 1fr 20px;
 }
 
 .coord {
@@ -34,23 +34,16 @@
 .coord-files {
   grid-area: 2 / 2;
   justify-content: space-around;
-  padding-top: 3px;
+  padding-top: 5px;
+  align-items: flex-start;
 }
 
 .board-wrap {
   position: relative;
   grid-area: 1 / 2;
-  /* `90vmin` on its own is 90% of the *short* viewport edge, and everything beside
-     the board needs the rest: the eval bar (34px), the 8px gap, the rank gutter,
-     and `.app`'s 32px of padding. On a 390px phone that is about 84px of
-     furniture, so `90vmin` left the page 7px wider than the viewport and the
-     board scrolled sideways — measured in Chromium, and spec §8 says the board
-     "stays fully visible without scrolling".
-     *
-     * The 60 is the measured total, rounded up with a little slack. On a desktop
-     * viewport it changes nothing: `90vmin - 60px` is 810-60 = 750 there, well
-     * past the 560px cap, so the board is still 560px exactly. */
-  width: min(90vmin - 60px, 560px);
+  /* BoardWorkspace supplies the available square; the fallback also lets a
+     standalone board fit without depending on the application's layout. */
+  width: var(--board-size, min(calc(100vw - 76px), calc(100dvh - 44px)));
 }
 
 .board {

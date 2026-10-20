@@ -1,6 +1,6 @@
 .evalbar { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 34px; }
 .evalbar-track {
-  position: relative; width: 18px; flex: 1; min-height: 200px;
+  position: relative; width: 18px; flex: 1; min-height: 0;
   /* `--edge`, not the old `--board-border`: the track is a UI object standing
      next to the board, not part of it, and it is a hairline rather than the
      board's wooden frame. */

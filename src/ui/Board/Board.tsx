@@ -111,12 +111,14 @@ function squareUnderPointer(event: DragEvent, board: HTMLElement | null): string
   return square.getAttribute('data-square');
 }
 
-/** Where the promotion picker sits: the centre of its destination square. */
+/** Anchor near the destination, leaving room for the 178×42px picker inside
+ * the board. The board can now sit at the viewport's top edge on phones. */
 function anchorStyle(square: string, orientation: Orientation): CSSProperties {
   const centre = squareCentre(square, orientation);
-  // The arrow overlay's 0..100 space is the board's own box, so a square's centre
-  // is already its offset across the board in percent.
-  return { left: `${centre.x}%`, top: `${centre.y}%` };
+  return {
+    left: `clamp(90px, ${centre.x}%, calc(100% - 90px))`,
+    top: `clamp(54px, ${centre.y}%, calc(100% - 7px))`,
+  };
 }
 
 export default function Board({

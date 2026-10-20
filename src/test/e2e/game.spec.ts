@@ -324,6 +324,7 @@ test.describe('a full game', () => {
   });
 
   test('offers four promotions when a pawn reaches the last rank', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
     // A real 12-ply game, stored rather than played: `1.c4 b6 2.c5 bxc5 3.b4 Nf6
     // 4.b5 Ng8 5.b6 Nf6 6.b7 Ng8`, after which White has a pawn on b7 and Black has
     // a rook on a8 and a bishop on c8. **Every one of the eight legal moves is a
@@ -370,6 +371,8 @@ test.describe('a full game', () => {
     await play(page, 'b7', 'a8');
     const picker = page.getByRole('dialog', { name: 'Choose promotion piece' });
     await expect(picker).toBeVisible();
+    await expect(picker).toBeInViewport({ ratio: 1 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     // Four options plus the cancel button. Underpromotion is offered on equal
     // terms with the queen, so a panel offering two would still pass a check on
     // the queen alone.
@@ -603,37 +606,17 @@ test.describe('a full game', () => {
   });
 });
 
-/**
- * Spec §8: the board "scales to the viewport and stays fully visible without
- * scrolling".
- *
- * A CSS-only property, so it can only be checked in a browser — jsdom applies no
- * layout and would pass this against any stylesheet at all, including no
- * stylesheet. It is here because `min(90vmin, 560px)` did overflow: measured in
- * Chromium at 390×844, `scrollWidth` was 397 in a 390px viewport, because
- * everything beside the board — the eval bar, the gap, the rank gutter, the app's
- * padding — needs the last 84px of the viewport that 90% of it had already spent.
- *
- * **Both halves are asserted.** "No overflow" alone would pass with a board of
- * zero width, and the desktop case is what stops the fix becoming a regression:
- * `90vmin - 60px` is 750px on a 1440×900 screen, so the 560px cap must still be
- * what applies there, or every desktop user would get a smaller board.
- */
+/** Browser geometry: the square uses the available height or width after the
+ * sidebar and coordinate/evaluation gutters, with no fixed desktop size cap.
+ * Check both maximization and overflow so a needlessly small board cannot pass. */
 for (const [label, width, height, expectedBoard] of [
-  ['a 390px phone', 390, 844, null],
-  ['a 360px phone', 360, 640, null],
-  // The width that was broken, and the reason it is in this list at all. 900 is not
-  // a special size: it is the middle of the band between the stacking breakpoint
-  // and the width the side-by-side layout actually needs (924px, measured), and the
-  // original test enumerated a phone and a desktop and skipped everything between
-  // them. `scrollWidth` was 924 in a 900px viewport, so the page scrolled sideways
-  // there and this suite said nothing. A list of viewports is only as good as the
-  // gaps in it.
-  ['a 900px window', 900, 800, null],
-  // And a width above the breakpoint, so the side-by-side layout is pinned from
-  // below as well as the phone layout from above.
-  ['a 1024px window', 1024, 800, 560],
-  ['a desktop viewport', 1440, 900, 560],
+  ['a 390px phone', 390, 844, 314],
+  ['a 360px phone', 360, 640, 284],
+  ['a landscape phone', 844, 390, 346],
+  ['a 900px window', 900, 800, 444],
+  ['a 1024px window', 1024, 800, 568],
+  ['a desktop viewport', 1440, 900, 856],
+  ['a wide desktop viewport', 2560, 1080, 1036],
 ] as const) {
   test(`the board fits ${label} without sideways scrolling`, async ({ page }) => {
     await page.setViewportSize({ width, height });
@@ -652,14 +635,7 @@ for (const [label, width, height, expectedBoard] of [
       measured.scrollWidth,
       `content is ${measured.scrollWidth}px wide in a ${measured.clientWidth}px viewport`,
     ).toBeLessThanOrEqual(measured.clientWidth);
-    if (expectedBoard !== null) {
-      expect(measured.board, 'the desktop cap must survive the phone fix').toBe(
-        expectedBoard,
-      );
-    } else {
-      // Not a zero-width board that trivially does not overflow.
-      expect(measured.board).toBeGreaterThan(200);
-    }
+    expect(measured.board, 'use all available space up to the width or height limit').toBe(expectedBoard);
   });
 }
 

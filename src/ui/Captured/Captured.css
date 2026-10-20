@@ -1,5 +1,8 @@
 .captured { display: flex; flex-direction: column; gap: 2px; font-size: 20px; line-height: 1.1; min-height: 52px; }
 .captured-row { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+/* Reserve the two rows once there is something to show. A new game has neither
+   captured pieces nor an advantage and needs no empty block in the sidebar. */
+.captured:not(:has(.captured-piece, .captured-adv:not(:empty))) { display: none; }
 .captured-glyphs { display: flex; align-items: center; }
 /* The vendored SVG, at the same 20px the Unicode glyph used to render at, so the
    panel is the height it was and an empty row still lines up with a full one. */
