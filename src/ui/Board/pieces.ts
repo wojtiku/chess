@@ -1,20 +1,8 @@
-// The one place a piece is named. Everything that draws a piece — the board, the
-// captured-pieces panel, the promotion picker — reads its artwork and its spoken
-// name from here, so there is no second table to fall out of step with the first.
-//
-// There WERE three: this module's own glyph lookup, `Captured.tsx`'s copy (so
-// that panel "needs nothing but the rules layer"), and `PromotionPicker.tsx`'s
-// four hardcoded symbols. Two of those were untested copies of the third, and the
-// promotion picker had no test file at all, so a mistake in it would have shipped
-// silently. The only reason a lookup may be duplicated is a test that owns its
-// own copy of the expected values, which is a different thing.
-//
-// The pieces themselves are twelve SVGs in `public/pieces/`, vendored and served
-// as static assets: see the README there for how they are built. The brief's
-// `ComponentType`
-// re-export is deliberately NOT here — it was dead weight copied from the plan's
-// sketch, and nothing in the app renders a piece as a React component.
+// Shared artwork and accessible names for the board, captures and promotion.
+// Seven original SVG sets are served from public/pieces; see its README for
+// artwork conventions and the generation command.
 
+import type { PieceSetId } from '../Appearance/catalog';
 import type { PieceType, Side } from '../../chess/types';
 
 /** The shape a caller may hand in. Chess.js's own cell is assignable to it. */
@@ -76,9 +64,13 @@ export function pieceKey(piece: PieceLike | undefined | null): string | null {
  * `null` rather than a broken `src`: a caller that rendered `<img src="">` for an
  * unknown piece would show the browser's missing-image icon in the middle of a
  * square, which is exactly as wrong as a blank one and much harder to miss. */
-export function pieceSrc(piece: PieceLike | undefined | null): string | null {
+export function pieceSrc(piece: PieceLike | undefined | null, set: PieceSetId = 'staunton'): string | null {
   const key = pieceKey(piece);
-  return key === null ? null : `/pieces/${key}.svg`;
+  return key === null ? null : assetPath(key, set);
+}
+
+function assetPath(key: string, set: PieceSetId): string {
+  return set === 'staunton' ? `/pieces/${key}.svg` : `/pieces/${set}/${key}.svg`;
 }
 
 /**
@@ -88,8 +80,8 @@ export function pieceSrc(piece: PieceLike | undefined | null): string | null {
  * caller cannot be given a piece this set has no artwork for, so re-deriving the
  * key at runtime would be work whose only outcome is a branch that cannot fail.
  */
-export function srcFor(type: PieceType, colour: Side): string {
-  return `/pieces/${KEYS[colour][type]}.svg`;
+export function srcFor(type: PieceType, colour: Side, set: PieceSetId = 'staunton'): string {
+  return assetPath(KEYS[colour][type], set);
 }
 
 /** A piece type's own name: `queen`, not `white queen`. */

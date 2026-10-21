@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45" width="45" height="45" role="img" aria-label="Black bishop">
+  <title>Black bishop</title>
+  <defs>
+    <linearGradient id="body" gradientUnits="userSpaceOnUse" x1="5" y1="4" x2="32" y2="42">
+      <stop offset="0" stop-color="#686868"/>
+      <stop offset="0.48" stop-color="#303030"/>
+      <stop offset="1" stop-color="#111111"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#body)" stroke="#e4e4e4" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"><path d="M15 32H30V35H33V38H36V41H9V38H12V35H15Z"/><path d="M22.5 3L30 14L25 23L29 32H16L20 23L15 14Z"/></g>
+  <g fill="url(#body)"><path d="M15 32H30V35H33V38H36V41H9V38H12V35H15Z"/><path d="M22.5 3L30 14L25 23L29 32H16L20 23L15 14Z"/></g>
+  <path d="M22.5 8V18M22.5 25V29M13 38H32M16 35H29" fill="none" stroke="#b7b7b7" stroke-width="0.85" stroke-linecap="round" stroke-linejoin="round"/>
+
+</svg>

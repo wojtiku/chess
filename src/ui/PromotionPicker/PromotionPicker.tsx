@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { pieceName, srcFor } from '../Board/pieces';
 import type { Side } from '../../chess/types';
+import { useAppearance } from '../Appearance/AppearanceContext';
 import './PromotionPicker.css';
 
 export interface PromotionPickerProps {
@@ -45,6 +46,7 @@ export default function PromotionPicker({
   onCancel,
   colour = 'w',
 }: PromotionPickerProps) {
+  const { appearance: { pieceSet } } = useAppearance();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -81,7 +83,7 @@ export default function PromotionPicker({
               `alt=""` because the button's own label already names the piece. */}
           <img
             className="promotion-piece"
-            src={srcFor(promotion, colour)}
+            src={srcFor(promotion, colour, pieceSet)}
             alt=""
             aria-hidden="true"
             draggable={false}

@@ -63,49 +63,22 @@
   grid-template-columns: repeat(8, minmax(0, 1fr));
   grid-template-rows: repeat(8, minmax(0, 1fr));
   aspect-ratio: 1;
-  /* A board's edge banding, as a gradient border. The double background is the
-     standard two-layer trick: `padding-box` paints under the squares (where it
-     never shows, which is fine — it is what makes the trick work) and
-     `border-box` shows only in the border band. `transparent` is required: the
-     `border-box` layer is clipped to the border only where the *other* layer is
-     transparent, so an opaque `padding-box` colour would hide the wood entirely.
-     *
-     * The gradient runs light-to-dark across the diagonal rather than being a flat
-     * colour, because a flat band reads as a border and a shaded one reads as a
-     * chamfered piece of wood. This is the loudest thing in the app and it is
-     * meant to be: everything else is flat, so the frame is where the board is
-     * allowed to be an object. */
   border: 7px solid transparent;
   border-radius: 5px;
-  background:
-    linear-gradient(var(--board-light), var(--board-light)) padding-box,
-    linear-gradient(150deg, #7a5334 0%, #4a3320 55%, #382514 100%) border-box;
-  /* Two shadows doing two jobs: the outer one lifts the board off the page, the
-     inner one is a highlight along the top edge — the one cue that says a flat
-     rectangle has a lit edge. */
-  box-shadow:
-    0 22px 44px rgba(0, 0, 0, 0.55),
-    0 2px 1px rgba(255, 232, 196, 0.09) inset;
+  background: var(--board-frame) border-box;
+  box-shadow: 0 22px 44px #0008, 0 3px 5px #0005,
+    inset 0 1px 0 var(--board-inlay), inset 0 -2px 0 #0005;
 }
 
-/* Light falls off toward the corners of a real board. One radial wash over the
-   whole board, above the squares and below nothing — it is a lamp, not a filter,
-   so it is the only overlay in the app and it earns its place by making 64 flat
-   divs read as one lit surface. `pointer-events: none` because it covers every
-   square on the board and the board is the app's main input. */
+/* The inlay follows the playing surface without changing the board geometry.
+   No padding: square centres must still align with arrows and promotion. */
 .board-wrap::after {
   content: '';
   position: absolute;
-  /* Inset by the border so the wash stops at the frame's inner edge rather than
-     tinting the wood banding, which is lit from the same lamp. */
   inset: 7px;
-  border-radius: 2px;
-  background: radial-gradient(
-    circle at 50% 42%,
-    rgba(255, 226, 178, 0.1) 0%,
-    rgba(255, 226, 178, 0) 45%,
-    rgba(20, 12, 6, 0.22) 100%
-  );
+  border-radius: 1px;
+  box-shadow: 0 0 0 1px var(--board-inlay), inset 0 0 10px #0003;
+  background: var(--board-wash);
   pointer-events: none;
 }
 
@@ -124,15 +97,20 @@
 }
 
 .square.light {
-  background: var(--board-light);
+  background: var(--board-light-texture), var(--board-light);
+  --square-texture: var(--board-light-texture);
 }
 
 .square.dark {
-  background: var(--board-dark);
+  background: var(--board-dark-texture), var(--board-dark);
+  --square-texture: var(--board-dark-texture);
 }
 
+.square:nth-child(3n) { background-position: 50% 70%; }
+.square:nth-child(5n) { background-position: 100% 20%; }
+
 .square:focus-visible {
-  outline: 3px solid var(--brass);
+  outline: 3px solid var(--board-selection);
   outline-offset: -3px;
   z-index: 2;
 }
@@ -143,12 +121,12 @@
    clicks the square the opponent just left, which is most moves. A ring is a
    different *kind* of mark, so the two never have to be told apart by hue. */
 .square[data-selected] {
-  box-shadow: inset 0 0 0 4px var(--brass);
+  box-shadow: inset 0 0 0 4px var(--board-selection);
   z-index: 2;
 }
 
 .square[data-last] {
-  background-image: var(--last-move);
+  background-image: linear-gradient(var(--board-last), var(--board-last)), var(--square-texture);
 }
 
 /* Check is a glow from the edges inward, not a disc over the middle. The old
@@ -158,7 +136,7 @@
    board where the piece matters most, so the mark is pushed to the edges and the
    middle is left alone. */
 .square[data-check] {
-  background-image: radial-gradient(circle at 50% 50%, transparent 35%, var(--check-glow) 100%);
+  background-image: radial-gradient(circle at 50% 50%, transparent 35%, var(--check-glow) 100%), var(--square-texture);
 }
 
 /* Separate from the persistent check mark: fading the warning must never fade
@@ -194,7 +172,8 @@
   width: 26%;
   height: 26%;
   border-radius: 50%;
-  background: rgba(20, 12, 6, 0.32);
+  background: var(--board-target-fill, #101c2a66);
+  box-shadow: 0 0 0 1px #ffffff38;
 }
 
 /* A legal destination that takes a piece: a ring, so the piece stays readable. */
@@ -202,7 +181,7 @@
   width: 86%;
   height: 86%;
   background: transparent;
-  border: 5px solid rgba(20, 12, 6, 0.32);
+  border: 5px solid var(--board-target-ring, #101c2a80);
 }
 
 /* A vendored SVG, sized as a fraction of its square rather than in `em`: the
@@ -233,7 +212,7 @@
      * piece is floating a little; two is what a real piece sitting on a real
      * square looks like. Both are offset *down* because the light in this app is
      overhead, so pieces drop shadow away from the lamp. */
-  filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.45)) drop-shadow(0 5px 6px rgba(0, 0, 0, 0.3));
+  filter: var(--piece-colour-filter, brightness(1)) drop-shadow(0 2px 1px rgba(0, 0, 0, 0.45)) drop-shadow(0 5px 6px rgba(0, 0, 0, 0.3));
   /* The drop target is the square, not the image under the cursor — which is a
      real thing to hit here, where the image covers 90% of the square. */
   pointer-events: none;
@@ -244,5 +223,5 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  color: rgba(217, 164, 65, 0.9);
+  color: var(--board-selection);
 }

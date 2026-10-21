@@ -120,8 +120,7 @@ const engineStatus = (page: Page) => page.locator('.engine-status');
  *
  * **This is no longer fixing a live collision, and the old comment said it was.**
  * It used to claim that "Show hint options" in the difficulty panel matched this
- * name. That button is gone — the hint mode moved inside the collapsed settings
- * panel, behind a disclosure named "Settings" — so the substring is currently
+ * name. That button is gone — the hint mode moved to the Settings tab — so the substring is currently
  * unique, and the un-narrowed query passes today (checked by running both hint
  * tests with it removed). The narrowing is kept on its own merits rather than for a
  * collision that no longer exists.
@@ -969,48 +968,31 @@ test('the eval bar dims between a move and its new evaluation', async ({ page })
   expect(await label()).not.toBe('—');
 });
 
-test('the five presets are the difficulty interface until the panel is opened', async ({ page }) => {
-  // A real layout question, and the reason this is a browser test: the claim is
-  // about what is *on screen*, and jsdom has no layout engine, so a unit test can
-  // only assert that the nodes are absent from the document. `toBeVisible` is
-  // Chromium measuring the box.
+test('Play keeps the difficulty presets and Settings holds the detailed preferences', async ({ page }) => {
   await page.goto('/');
-  await page.waitForSelector('[data-square]');
-
   const presets = page.getByRole('radiogroup', { name: 'Difficulty' });
   for (const label of ['Beginner', 'Easy', 'Medium', 'Hard', 'Expert']) {
     await expect(presets.getByRole('radio', { name: label, exact: true })).toBeVisible();
   }
   await expect(page.locator('.difficulty-settings')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Appearance' })).toHaveCount(0);
 
-  // The disclosure is the only way in, and it says which way it goes.
-  const disclosure = page.getByRole('button', { name: 'Settings', exact: true });
-  await expect(disclosure).toBeVisible();
-  await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
-
-  await disclosure.click();
-
+  await page.getByTestId('mode-settings').click();
+  await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Appearance' })).toBeVisible();
   const panel = page.locator('.difficulty-settings');
+  await panel.scrollIntoViewIfNeeded();
   await expect(panel).toBeVisible();
-  // Boxed rather than just stacked, so the adjustments do not read as more
-  // presets. `border-style` is the assertion that survives a theme change; a
-  // background colour would be asserted against whichever theme loaded.
   await expect(panel).toHaveCSS('border-top-style', 'solid');
   await expect(page.getByLabel('Skill level')).toBeVisible();
   await expect(page.getByLabel(/Minimum think time/)).toBeVisible();
   await expect(page.getByLabel('Hint quality')).toBeVisible();
-  // And only the button group is called "Hints". The select was "Hints" too until a
-  // loose `/hint/i` matched both and Playwright's strict mode refused to guess —
-  // which is the whole argument for the rename, so it is pinned rather than left as
-  // a story: one element answers to "Hints", the other to "Hint quality".
-  await expect(page.getByLabel('Hints')).toHaveCount(1);
   await expect(page.getByText(/Engine strength:/)).toBeVisible();
-  // Nothing scrolled the presets off the top to make room.
-  await expect(presets).toBeVisible();
 
-  await page.getByRole('button', { name: 'Hide settings', exact: true }).click();
+  await page.getByTestId('mode-play').click();
   await expect(panel).toHaveCount(0);
   await expect(presets).toBeVisible();
+  await expect(page.getByLabel('Hints', { exact: true })).toHaveCount(1);
 });
 
 test('every button is a visible surface against the page, not an outline on a wall', async ({ page }) => {

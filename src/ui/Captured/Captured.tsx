@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import type { Chess } from '../../chess/rules';
 import type { PieceType, Side } from '../../chess/types';
 import { srcFor } from '../Board/pieces';
+import { useAppearance } from '../Appearance/AppearanceContext';
+import type { PieceSetId } from '../Appearance/catalog';
 import './Captured.css';
 
 /** Piece values in pawns. The king is present and worth 0 on purpose: a king is
@@ -115,7 +117,7 @@ export function capturedBy(game: Chess): CapturedBy {
  * first `<img>` for the second, which for a list this short is invisible until
  * someone captures two queens.
  */
-function pieceImgs(pieces: PieceType[], colour: Side): ReactNode[] {
+function pieceImgs(pieces: PieceType[], colour: Side, pieceSet: PieceSetId): ReactNode[] {
   const out: ReactNode[] = [];
   for (const type of BY_VALUE) {
     for (const piece of pieces) {
@@ -124,7 +126,7 @@ function pieceImgs(pieces: PieceType[], colour: Side): ReactNode[] {
           <img
             key={`${type}-${out.length}`}
             className="captured-piece"
-            src={srcFor(type, colour)}
+            src={srcFor(type, colour, pieceSet)}
             alt=""
             aria-hidden="true"
             draggable={false}
@@ -178,6 +180,7 @@ function CapturedRow({
   diff: number;
 }) {
   // The colour of the pieces on this row is the colour of the side that LOST them.
+  const { appearance: { pieceSet } } = useAppearance();
   const lostTo = side === 'w' ? 'b' : 'w';
   return (
     <div className="captured-row" data-side={side}>
@@ -193,7 +196,7 @@ function CapturedRow({
         aria-label={rowLabel(side, pieces, diff)}
         data-testid={`captured-by-${side}`}
       >
-        {pieceImgs(pieces, lostTo)}
+        {pieceImgs(pieces, lostTo, pieceSet)}
       </span>
       {/* Empty rather than "+0": a level game has no advantage to announce, and the
         testid exists so a test can assert the absence as precisely as a presence. */}

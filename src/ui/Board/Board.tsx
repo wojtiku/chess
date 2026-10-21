@@ -6,6 +6,7 @@ import { displaySquares, stepSquare, type ArrowKey, type Orientation } from './s
 import { arrowEnds, arrowStyle, squareCentre, type BoardArrow } from './arrows';
 import { pieceLabel, pieceSrc } from './pieces';
 import PromotionPicker from '../PromotionPicker/PromotionPicker';
+import { useAppearance } from '../Appearance/AppearanceContext';
 import './Board.css';
 
 export interface BoardProps {
@@ -129,6 +130,7 @@ export default function Board({
   arrows,
   onMove,
 }: BoardProps) {
+  const { appearance: { pieceSet } } = useAppearance();
   const [selected, setSelected] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [kingPulse, setKingPulse] = useState<{ square: string; position: string; sequence: number } | null>(null);
@@ -376,10 +378,10 @@ export default function Board({
                   instead of an `<img>` with an empty `src` and the browser's
                   missing-image icon in the middle of a square.
                 */}
-                {pieceSrc(piece) !== null && (
+                {pieceSrc(piece, pieceSet) !== null && (
                   <img
                     className="piece"
-                    src={pieceSrc(piece) ?? undefined}
+                    src={pieceSrc(piece, pieceSet) ?? undefined}
                     alt=""
                     aria-hidden="true"
                     draggable={false}
@@ -439,6 +441,7 @@ export default function Board({
           <div className="promotion-anchor" style={anchorStyle(pendingPromotion.to, orientation)}>
             <PromotionPicker
               square={pendingPromotion.to}
+              colour={game.turn()}
               onSelect={onPromotionSelect}
               onCancel={onPromotionCancel}
             />

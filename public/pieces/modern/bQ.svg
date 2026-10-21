@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45" width="45" height="45" role="img" aria-label="Black queen">
+  <title>Black queen</title>
+  <defs>
+    <linearGradient id="body" gradientUnits="userSpaceOnUse" x1="5" y1="4" x2="32" y2="42">
+      <stop offset="0" stop-color="#686868"/>
+      <stop offset="0.48" stop-color="#303030"/>
+      <stop offset="1" stop-color="#111111"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#body)" stroke="#e4e4e4" stroke-width="1.35" stroke-linejoin="round" stroke-linecap="round"><path d="M13 34H32Q36 34 36 37.5Q36 41 32 41H13Q9 41 9 37.5Q9 34 13 34Z"/><path d="M12 12Q10 8 13 8Q16 8 18 16L20 7Q22.5 3 25 7L27 16Q30 8 33 8Q36 8 34 12L29 26L28 35H17L16 26Z"/></g>
+  <g fill="url(#body)"><path d="M13 34H32Q36 34 36 37.5Q36 41 32 41H13Q9 41 9 37.5Q9 34 13 34Z"/><path d="M12 12Q10 8 13 8Q16 8 18 16L20 7Q22.5 3 25 7L27 16Q30 8 33 8Q36 8 34 12L29 26L28 35H17L16 26Z"/></g>
+  <path d="M18 26H27M14 37.5H31" fill="none" stroke="#b7b7b7" stroke-width="0.85" stroke-linecap="round" stroke-linejoin="round"/>
+
+</svg>

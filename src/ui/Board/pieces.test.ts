@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PieceType, Side } from '../../chess/types';
 import { pieceKey, pieceLabel, pieceName, pieceSrc, srcFor, type PieceLike } from './pieces';
+import { PIECE_SETS } from '../Appearance/catalog';
 
 /** `public/pieces/`, resolved from this file the way `copy-engine.test.ts` resolves
  *  the repo root — `import.meta.url` is not a `file:` URL under vitest, so the
@@ -32,6 +33,18 @@ const ASSETS: ReadonlyArray<readonly [string, string, string]> = [
   ['w', 'p', 'wP'], ['w', 'n', 'wN'], ['w', 'b', 'wB'], ['w', 'r', 'wR'], ['w', 'q', 'wQ'], ['w', 'k', 'wK'],
   ['b', 'p', 'bP'], ['b', 'n', 'bN'], ['b', 'b', 'bB'], ['b', 'r', 'bR'], ['b', 'q', 'bQ'], ['b', 'k', 'bK'],
 ];
+
+it.each(PIECE_SETS)('$name artwork leaves colour to the board theme', (set) => {
+  for (const [, , key] of ASSETS) {
+    const svg = readFileSync(join(PIECES_DIR, set.id === 'staunton' ? '' : set.id, `${key}.svg`), 'utf8');
+    const colours = [...svg.matchAll(/#([0-9a-f]{6})/gi)];
+    expect(colours.length).toBeGreaterThan(0);
+    for (const [, hex] of colours) {
+      expect(hex!.slice(0, 2), `${set.id}/${key}: ${hex}`).toBe(hex!.slice(2, 4));
+      expect(hex!.slice(2, 4), `${set.id}/${key}: ${hex}`).toBe(hex!.slice(4, 6));
+    }
+  }
+});
 
 describe('pieceLabel', () => {
   it('names each of the twelve pieces as "<colour> <piece>"', () => {

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45" width="45" height="45" role="img" aria-label="Black knight">
+  <title>Black knight</title>
+  <defs>
+    <linearGradient id="body" gradientUnits="userSpaceOnUse" x1="5" y1="4" x2="32" y2="42">
+      <stop offset="0" stop-color="#686868"/>
+      <stop offset="0.48" stop-color="#303030"/>
+      <stop offset="1" stop-color="#111111"/>
+    </linearGradient>
+  </defs>
+  <g fill="#303030" stroke="#e4e4e4" stroke-width="1.65" stroke-linejoin="round" stroke-linecap="round"><path d="M12 34Q20 32 33 34L35 40Q22 42 10 40Z"/><path d="M14 34Q14 28 23 21L21 18L17 21L10 18L13 13L20 8L21 3L25 8Q36 11 32 25L30 34Z"/></g>
+  <g fill="#303030"><path d="M12 34Q20 32 33 34L35 40Q22 42 10 40Z"/><path d="M14 34Q14 28 23 21L21 18L17 21L10 18L13 13L20 8L21 3L25 8Q36 11 32 25L30 34Z"/></g>
+  <path d="M25 12Q30 15 27 24M17 36L15 39M22 36L20 39M27 36L25 39" fill="none" stroke="#b7b7b7" stroke-width="0.95" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <circle cx="22" cy="12.5" r="1" fill="#b7b7b7"/>
+</svg>

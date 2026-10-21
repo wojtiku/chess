@@ -72,7 +72,7 @@
 .app-hint-line { margin: 0; font-size: 13px; }
 
 /* Navigation belongs to the panel it changes, not to the page title. */
-.app-modes { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--edge); padding: 6px 6px 0; }
+.app-modes { display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--edge); padding: 6px 6px 0; }
 .app-modes button {
   background: transparent;
   color: var(--muted);
@@ -116,3 +116,6 @@
   .app-panel { padding: 18px 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .app-modes button { transition: none; } }
+
+.settings-opponent { display: grid; gap: 12px; }
+.settings-opponent h3 { margin: 0; font-size: 14px; font-weight: 600; }

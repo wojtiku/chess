@@ -9,6 +9,8 @@ export interface DifficultyControlProps {
   /** True while the engine owns the board. The panel goes inert rather than
    *  accepting a change that would only take effect on the next search. */
   disabled?: boolean;
+  /** Play shows presets; the Settings panel shows the detailed controls directly. */
+  advanced?: 'disclosure' | 'visible' | 'hidden';
 }
 
 /** The slider's own range. `difficulty.ts` deliberately does not export its
@@ -28,44 +30,10 @@ const HINT_MODES: ReadonlyArray<{ value: HintMode; label: string }> = [
   { value: 'good', label: 'A good idea' },
 ];
 
-/**
- * Difficulty: five named presets, and everything else behind one collapsed panel.
- *
- * The presets are the entire interface for most people, so they are what is on
- * screen. The raw 0-20 slider, the think-time floor and the hint mode are all
- * real settings and all still reachable, but they are *adjustments* to a preset
- * rather than the primary control, and a learner who wants Beginner gets Beginner
- * without reading a slider scale.
- *
- * The presets and the raw slider are ONE setting, and the panel is built so they
- * cannot disagree:
- *
- *  - both read `settings.skillLevel` and nothing else, so there is no second copy
- *    of the level to fall out of step;
- *  - the checked preset is `presetFor(settings.skillLevel)`, which clamps its
- *    argument first, and the label is `presetLabel(settings.skillLevel)`, which
- *    clamps the same way. Comparing the raw level against the table instead — as
- *    the brief's sketch does — makes the two disagree for exactly the values that
- *    arrive from corrupt storage, where `presetLabel(NaN)` is "Medium" and
- *    `NaN === 8` is false, so the row would highlight nothing while the label
- *    named a preset;
- *  - a level that is not a preset is labelled `Custom (n)` rather than left blank,
- *    so the raw slider is visibly the same setting rather than a second control.
- *  - the label is INSIDE the panel, which it did not used to be. With it outside,
- *    a learner who never opens the panel could be shown "Custom (7)" with no
- *    visible way to reach the slider that set it — a reading with no control
- *    behind it. Now the only way to see `Custom` is to open the thing that can
- *    produce it.
- *
- * Collapsed by default and not remembered between sessions: it is a view state,
- * not a preference, and a stale "open" would put three sliders back on screen for
- * someone who had deliberately dismissed them.
- *
- * Every change is a spread of the settings the panel was given, so orientation,
- * theme and hint mode survive: dropping one is invisible here and very visible to
- * a learner whose board flips because they changed the difficulty.
- */
-export default function DifficultyControl({ settings, onChange, disabled }: DifficultyControlProps) {
+/** Named presets are shared between Play and Settings. Detailed controls are
+ * visible in Settings, hidden in Play, or collapsible for standalone use.
+ * Both views read the same settings and spread updates to preserve the others. */
+export default function DifficultyControl({ settings, onChange, disabled, advanced = 'disclosure' }: DifficultyControlProps) {
   const [open, setOpen] = useState(false);
   const id = useId();
   const selected = presetFor(settings.skillLevel);
@@ -87,7 +55,7 @@ export default function DifficultyControl({ settings, onChange, disabled }: Diff
         ))}
       </div>
 
-      <button
+      {advanced === 'disclosure' && <button
         type="button"
         className="difficulty-advanced"
         aria-expanded={open}
@@ -98,9 +66,9 @@ export default function DifficultyControl({ settings, onChange, disabled }: Diff
             read aloud is noise. */}
         <span className="difficulty-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
         {open ? 'Hide settings' : 'Settings'}
-      </button>
+      </button>}
 
-      {open && (
+      {(advanced === 'visible' || (advanced === 'disclosure' && open)) && (
         <div className="difficulty-settings" id={`${id}-settings`}>
           <p className="difficulty-current">Engine strength: {presetLabel(settings.skillLevel)}</p>
 

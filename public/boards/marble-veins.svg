@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
+  <defs>
+    <filter id="veins" x="-30%" y="-30%" width="160%" height="160%">
+      <feTurbulence type="fractalNoise" baseFrequency=".018 .025" numOctaves="3" seed="8" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="34" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+  <g filter="url(#veins)" fill="none" stroke-linecap="round">
+    <path d="M-20 190Q50 170 68 110T170 46T260-5M68 110Q108 126 155 91T265 75" stroke="#ffffff" stroke-opacity=".08" stroke-width="9"/>
+    <path d="M-20 190Q50 170 68 110T170 46T260-5M68 110Q108 126 155 91T265 75" stroke="#ffffff" stroke-opacity=".25" stroke-width="1.1"/>
+    <path d="M-10 75Q45 86 90 45T195-10M100 255Q124 220 167 211T255 152" stroke="#142a24" stroke-opacity=".12" stroke-width="1.4"/>
+    <path d="M-5 80Q45 91 90 50T195-5M105 255Q129 225 172 216T255 157" stroke="#ffffff" stroke-opacity=".13" stroke-width=".7"/>
+  </g>
+</svg>

@@ -17,10 +17,16 @@ import EngineStatusView from './ui/EngineStatus/EngineStatus';
 import Quickstart from './ui/Quickstart/Quickstart';
 import CoachPanel from './ui/Coach/CoachPanel';
 import ReviewPanel from './ui/Review/ReviewPanel';
+import SettingsPanel from './ui/Settings/SettingsPanel';
 import { BoardWorkspace, type Mode } from './ui/TutorShell';
+import { AppearanceProvider } from './ui/Appearance/AppearanceContext';
 import './App.css';
 
 export default function App() {
+  return <AppearanceProvider><GameApp /></AppearanceProvider>;
+}
+
+function GameApp() {
   const g = useGame();
   // One sidebar selection, no router or landing screen. Learn temporarily draws
   // an exercise board; useGame stays mounted so returning restores the game.
@@ -122,6 +128,9 @@ export default function App() {
         </>}>
           {mode === 'coach' && <CoachPanel fen={drawnFen} />}
           {mode === 'review' && <ReviewPanel onLearn={() => setMode('learn')} />}
+          {mode === 'settings' && (
+            <SettingsPanel settings={g.settings} onChange={g.setSettings} engineUnavailable={engineUnavailable} />
+          )}
           {mode === 'play' && <>
           <div className="app-panel-heading">
             <h2>Your game</h2>
@@ -181,6 +190,7 @@ export default function App() {
           />
 
           <DifficultyControl
+            advanced="hidden"
             settings={g.settings}
             onChange={g.setSettings}
             disabled={engineUnavailable}

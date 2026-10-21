@@ -11,7 +11,7 @@
   /* The same contact shadow the board's pieces get, dropped to one and softened:
      at 20px against a dark panel a piece with a hard edge reads as a sticker, and
      a 20px copy of the board's two-shadow stack is a grey smudge. */
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
+  filter: var(--piece-colour-filter, brightness(1)) drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
 }
 /* An empty row must not collapse: a learner reading the two rows side by side
    needs the rows to stay on the same lines as the game grows. */

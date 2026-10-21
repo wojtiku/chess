@@ -1,0 +1,81 @@
+/* Material tokens are scoped to the board and its preview. The surrounding
+   workspace keeps a quiet, consistent palette when comparing finishes. */
+.appearance-root { display: contents; }
+.piece-palette-definitions { position: absolute; width: 0; height: 0; pointer-events: none; }
+:root,
+[data-board-theme='walnut'] {
+  --board-light: #e0c9a4;
+  --board-dark: #8f6244;
+  --board-frame: linear-gradient(135deg, #906444, #4b2b1b 35%, #6c422c 48%, #321e14 100%);
+  --board-inlay: #c49a60;
+  --board-selection: #f7ce70;
+  --board-last: #f7ce704d;
+  --board-light-texture: repeating-linear-gradient(4deg, #83542c08 0px, #fff5d412 1px, transparent 2px, transparent 7px), repeating-linear-gradient(92deg, transparent 0px, #79533408 2px, transparent 5px, transparent 21px);
+  --board-dark-texture: repeating-linear-gradient(3deg, #2b120e12 0px, #e0ad6810 1px, transparent 3px, transparent 8px), repeating-linear-gradient(94deg, transparent 0px, #27130b0c 2px, transparent 7px, transparent 29px);
+  --board-wash: radial-gradient(ellipse at 46% 28%, #fff1c90d, transparent 55%, #210d0a21);
+}
+[data-board-theme='marble'] {
+  --board-light: #e6e3d7;
+  --board-dark: #437268;
+  --board-frame: linear-gradient(135deg, #709386, #233e36 36%, #3f6254 48%, #152e27);
+  --board-inlay: #c5b382;
+  --board-selection: #ffda7b;
+  --board-last: #ffda7b50;
+  --board-light-texture: url(/boards/marble-veins.svg), radial-gradient(ellipse at 30% 20%, #ffffff30, transparent 75%);
+  --board-dark-texture: url(/boards/marble-veins.svg), radial-gradient(ellipse at 30% 20%, #d8f2e612, transparent 75%);
+  --board-wash: linear-gradient(125deg, #e7fff00c, transparent 45%, #061c181a);
+}
+[data-board-theme='slate'] {
+  --board-light: #bac9d3;
+  --board-dark: #506477;
+  --board-frame: linear-gradient(135deg, #8293a3, #293644 30%, #455768 48%, #19232e);
+  --board-inlay: #8fabbf;
+  --board-selection: #c9f0ff;
+  --board-last: #b1e6ff55;
+  --board-light-texture: repeating-linear-gradient(165deg, transparent 0 2px, #2f496407 3px, transparent 4px 9px), repeating-linear-gradient(75deg, transparent 0 9px, #ffffff0c 10px, transparent 12px 19px);
+  --board-dark-texture: repeating-linear-gradient(164deg, transparent 0 3px, #142c4812 4px, transparent 5px 10px), repeating-linear-gradient(76deg, transparent 0 8px, #d8e9ff09 9px, transparent 11px 21px);
+  --board-wash: radial-gradient(ellipse at 45% 25%, #d8efff08, transparent 50%, #061b3320);
+}
+[data-board-theme='rosewood'] {
+  --board-light: #e3bf91;
+  --board-dark: #925460;
+  --board-frame: linear-gradient(135deg, #a06162, #512730 30%, #743b42 48%, #32171e);
+  --board-inlay: #d3a36c;
+  --board-selection: #ffe0a1;
+  --board-last: #ffce7d55;
+  --board-light-texture: repeating-linear-gradient(89deg, #7a422710 0px, #fff0bf14 1px, transparent 3px 10px), repeating-linear-gradient(86deg, transparent 0 17px, #9e643b0a 19px, transparent 21px 37px);
+  --board-dark-texture: repeating-linear-gradient(89deg, #2e0a191a 0px, #f8b6a410 1px, transparent 3px 8px), repeating-linear-gradient(86deg, transparent 0 15px, #39102014 17px, transparent 20px 35px);
+  --board-wash: radial-gradient(ellipse at 45% 25%, #ffe8c30c, transparent 55%, #27071824);
+}
+[data-board-theme='porcelain'] {
+  --board-light: #e9eef0;
+  --board-dark: #456eab;
+  --board-frame: linear-gradient(135deg, #a6bddc, #294c7d 32%, #6688b4 48%, #1d365b);
+  --board-inlay: #c5d4e5;
+  --board-selection: #ffdd77;
+  --board-last: #ffdd7755;
+  --board-light-texture: radial-gradient(ellipse at 28% 18%, #ffffff85, transparent 70%), linear-gradient(135deg, #9baec012, transparent 45%);
+  --board-dark-texture: radial-gradient(ellipse at 28% 18%, #c7deff1a, transparent 70%), linear-gradient(135deg, #132d591a, transparent 45%);
+  --board-wash: linear-gradient(135deg, #ffffff0a, transparent 45%, #0c255314);
+}
+
+[data-board-theme='monochrome'] {
+  --board-light: #f7f7f5;
+  --board-dark: #292c30;
+  --board-frame: linear-gradient(135deg, #6d7075, #25272b 35%, #45484d 48%, #17191c);
+  --board-inlay: #979ba1;
+  --board-selection: #c17a16;
+  --board-last: #e5a13466;
+  --board-light-texture: none;
+  --board-dark-texture: none;
+  --board-wash: none;
+}
+/* Opposing marks stay clear on both halves of the high-contrast board. */
+[data-board-theme='monochrome'] .square.light {
+  --board-target-fill: #17191cb3;
+  --board-target-ring: #17191ccc;
+}
+[data-board-theme='monochrome'] .square.dark {
+  --board-target-fill: #f7f7f5b3;
+  --board-target-ring: #f7f7f5cc;
+}

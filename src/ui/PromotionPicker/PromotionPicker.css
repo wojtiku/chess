@@ -36,6 +36,7 @@
    the button's own min-height rather than to a font, so it cannot drift out of
    the popover at a different root font size. */
 .promotion-piece {
+  filter: var(--piece-colour-filter, brightness(1));
   width: 30px;
   height: 30px;
   pointer-events: none;

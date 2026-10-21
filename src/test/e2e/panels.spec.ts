@@ -18,7 +18,7 @@ for (const [width, height, sideBySide] of [
     const initialPanel = (await page.getByRole('complementary').boundingBox())!;
     const initialTab = (await page.getByTestId('mode-play').boundingBox())!;
     const initialBoard = (await page.getByRole('grid').boundingBox())!;
-    for (const mode of ['play', 'learn', 'coach', 'review']) {
+    for (const mode of ['play', 'learn', 'coach', 'review', 'settings']) {
       await page.getByTestId(`mode-${mode}`).click();
       // Clicking tabs below the board scrolls the stacked page. Measure from its
       // starting position so fitting in the viewport means the whole board fits.

@@ -1,18 +1,4 @@
-/* Every colour in the app comes from here.
-
-   **One theme, and it is the dark one.** There is no `data-theme` and no light
-   palette. A second theme was a toggle that cost a branch in `App`, a `theme` key
-   in `Settings`, a `ThemeName` type, a validation rule in `persistence.ts` and a
-   `prefers-color-scheme` read — all of it to offer the learner a version of an
-   app they never asked for, on a board where the pieces read best against wood
-   and shadow. The `theme` key is still *tolerated* in stored settings (ignored,
-   not rejected) so a learner's saved game keeps loading.
-
-   `color-scheme: dark` is declared before the custom properties on purpose: it is
-   what makes the browser's own widgets — scrollbars, the range inputs' track, the
-   `<select>`, a focus ring drawn by the UA — follow the theme. Without it a dark
-   panel with light scrollbars is the most common way a "dark mode" announces that
-   nobody asked the browser. */
+/* Workspace colours. Board material palettes live in Appearance/board-themes.css. */
 :root {
   color-scheme: dark;
 

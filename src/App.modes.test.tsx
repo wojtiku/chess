@@ -20,6 +20,7 @@ class SilentWorker {
 
 describe('App: modes', () => {
   beforeEach(() => {
+    localStorage.clear();
     vi.stubGlobal('Worker', SilentWorker);
   });
 
@@ -32,13 +33,13 @@ describe('App: modes', () => {
   });
 
   it('offers every mode the spec settled on', () => {
-    // Play, Learn, Coach, Review. Coach and Review are visible from the start
+    // Play, Learn, Coach, Review, Settings. Coach and Review are visible from the start
     // rather than hidden until earned: a learner who cannot see that a review
     // queue exists cannot look for it, and a greyed-out button is a worse
     // invitation than one that says why it is empty.
     setup();
     render(<App />);
-    for (const name of [/play/i, /learn/i, /coach/i, /review/i]) {
+    for (const name of [/play/i, /learn/i, /coach/i, /review/i, /settings/i]) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
     }
   });
@@ -47,7 +48,7 @@ describe('App: modes', () => {
     const { user } = setup();
     render(<App />);
     const board = screen.getByRole('grid', { name: 'Chess board' });
-    for (const mode of ['coach', 'review', 'play']) {
+    for (const mode of ['coach', 'review', 'settings', 'play']) {
       await user.click(screen.getByTestId(`mode-${mode}`));
       expect(screen.getByRole('grid', { name: 'Chess board' })).toBe(board);
       expect(within(screen.getByRole('complementary')).getByRole('navigation', { name: 'Mode' })).toBeInTheDocument();
@@ -64,6 +65,31 @@ describe('App: modes', () => {
     expect(within(screen.getByRole('complementary')).getByRole('group', { name: 'Quickstart' })).toBeInTheDocument();
     await user.click(screen.getByTestId('mode-play'));
     expect(screen.getByRole('button', { name: 'e4, white pawn' })).toBeInTheDocument();
+  });
+
+  it('saves appearance, opponent and hint preferences from Settings while keeping the game', async () => {
+    const { user } = setup();
+    const view = render(<App />);
+    await user.click(screen.getByRole('button', { name: 'e2, white pawn' }));
+    await user.click(screen.getByRole('button', { name: 'e4, empty' }));
+    await user.click(screen.getByTestId('mode-settings'));
+    await user.click(screen.getByRole('button', { name: 'Black & White' }));
+    await user.click(screen.getByRole('button', { name: 'Ink' }));
+    await user.click(screen.getByRole('radio', { name: 'Hard' }));
+    await user.selectOptions(screen.getByLabelText('Hint quality'), 'good');
+    await user.click(screen.getByTestId('mode-play'));
+    expect(screen.getByRole('button', { name: 'e4, white pawn' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Hard' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByRole('region', { name: 'Appearance' })).not.toBeInTheDocument();
+
+    view.unmount();
+    render(<App />);
+    expect(screen.getByRole('button', { name: 'e4, white pawn' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Hard' })).toHaveAttribute('aria-checked', 'true');
+    await user.click(screen.getByTestId('mode-settings'));
+    expect(screen.getByRole('button', { name: 'Black & White' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Ink' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('Hint quality')).toHaveValue('good');
   });
 
   it('opens the quickstart from Learn, with no key and no network', async () => {

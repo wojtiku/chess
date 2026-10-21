@@ -3,18 +3,19 @@
 
 import type { ReactNode } from 'react';
 
-export type Mode = 'play' | 'learn' | 'coach' | 'review';
+export type Mode = 'play' | 'learn' | 'coach' | 'review' | 'settings';
 
 export const MODES: ReadonlyArray<{ id: Mode; label: string }> = [
   { id: 'play', label: 'Play' },
   { id: 'learn', label: 'Learn' },
   { id: 'coach', label: 'Coach' },
   { id: 'review', label: 'Review' },
+  { id: 'settings', label: 'Settings' },
 ];
 
 /**
  * `aria-current="page"` rather than a class alone, so the current mode is
- * *announced* as well as styled. A sighted learner sees which of four buttons is
+ * *announced* as well as styled. A sighted learner sees which navigation button is
  * active instantly; a screen-reader user otherwise has to work it out.
  */
 export function ModeSwitcher({
