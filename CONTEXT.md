@@ -6,9 +6,8 @@ implementation detail here. Decisions with consequences live in
 
 ## The learner
 
-The person using the app to learn chess. In the first release this is one adult learning alone,
-on their own device, with no teacher. The app is designed for that learner and is not assumed to
-have a second one.
+The person using the app to learn chess independently, whether an adult or a child.
+The learning experience serves one learner at a time, without requiring a teacher.
 
 ## Coach
 
@@ -20,12 +19,12 @@ did not choose is not theirs.
 ## Decision
 
 A settled question about a position: which moves are good, which is best, whether a tactic
-exists, whether a piece is at risk. Every Decision is established by the engine or by detection,
-never by the Coach.
+exists, whether a piece is at risk. A Decision rests on trusted source evidence or verification,
+never on the Coach's explanatory wording.
 
 ## Fact
 
-A statement about the current position that the app has verified and can show. A Fact is the only
+A statement about the current position supported by trusted source evidence or verification. A Fact is the only
 thing a Claim is allowed to rest on. Facts include **negative** facts — "no piece of yours is
 under attack" is a Fact, and must be as available as "your knight is under attack", or anything
 asked about a threat will have one invented to explain it.
@@ -36,9 +35,8 @@ whose turn it is — is the most common thing a model gets confidently wrong.
 
 ## Detector
 
-The thing that turns a position into a Fact. Every Fact comes from a Detector, and nothing else may
-make one. A Detector is exact or it is a bug: there is no room for a judgement, an estimate, or a
-sense of what a position probably means.
+Something that establishes a specific Fact from a position. A Detector is exact rather than a
+judgment or estimate; it is not the only possible source of evidence for a teaching Concept.
 
 ## Fact pack
 
@@ -58,43 +56,35 @@ teaching lives in the shape of the interaction rather than in the wording.
 A named chess idea a learner is meant to acquire — an undefended piece, a fork, development, king
 safety.
 
-A Concept is **not a label**. It is a function from a position to a Fact, or to nothing. The app
-may say "undefended piece" only when the Detector for it has fired; otherwise the word is
-unavailable, however apt it seems. This is what makes the teaching auditable: a Claim is wrong only
-if a Fact is wrong or missing, and Facts are testable.
-
-Not every Concept survives this. Some are exactly computable while their name is a judgement —
-"There is a checkmate here" is a Fact, "this is the rook roller" is not. Such Concepts may have
-their Fact taught and their name withheld. Some are not computable at all, and are not taught as
-graded topics: "this is a draw" is a rulebook judgement, not a fact.
+Trusted source motif tags may identify a Concept in an Exercise; a bespoke Detector is not
+required for every Concept. Naming a Concept does not justify unsupported claims about the
+position or determine whether a move completes the task.
 
 ## Exercise
 
-A position where the learner must choose a move, and be told whether it demonstrated the Concept.
+A preset position with a stated task in which the learner plays one move or a continuation
+against prepared replies. It is complete when the learner achieves its defined teaching endpoint,
+not necessarily after the first correct move or at the end of a game.
 
-An Exercise is a **single decision**. It does not continue into a game, and it has no opponent of
-its own. It is graded on two independent axes, and a move can score well on one and badly on the
-other:
+## Objective
 
-- **Sound** — the move is within tolerance of the best available (see **Standing**).
-- **Demonstrating** — the move fired the Concept's Detector.
+What the learner is asked to achieve in an Exercise. A move can be good chess without satisfying
+the Objective, and different verified moves may satisfy the same Objective.
 
-A wrong move is **played, not refused**, and the opponent's best reply is shown as its consequence.
-A refused move teaches nothing about why the alternative was better. But being shown a consequence is
-Assistance: the first attempt is the Independent one, and nothing after it can be.
+## Teaching endpoint
+
+The point at which the learner has demonstrated what an Exercise asks, such as completing a fork's
+capture or delivering checkmate. It bounds the task without requiring unrelated play afterwards.
 
 ## Consequence
 
-What actually happens after a wrong move: the move is played and the strongest available reply is
-shown. The Consequence is the teaching. It is deliberately not a penalty and not a game — the
-learner sees where the move led, then gets another attempt before the correct move is revealed.
+The demonstrated result of a wrong move, offered on request when a verified refutation is available.
+Seeing a Consequence is explanatory assistance, not a compulsory opponent reply or a penalty.
 
 ## Recovery step
 
-The step between a wrong move's Consequence and the end of the Exercise: another attempt first, the
-correct move on request or after a second failure. Retry before reveal, because being made to
-retrieve the move teaches more than being shown it — and bounded, because a stuck learner otherwise
-keeps guessing. The highest rung reached is recorded with the Attempt.
+The learner's choice after a mistake: retry the current decision, request available help, reveal
+the solution, or leave for another Exercise. A retry preserves the correct prefix of a continuation.
 
 ## Standing
 
@@ -113,36 +103,46 @@ delegated, and the only part that can be replaced without changing what is taugh
 A unit of instruction with one observable objective: after it, the learner can do one thing they
 could not do before. A lesson is not a position; it may contain several.
 
-## Exercise
-
-A position where the learner must choose a move, and be told whether it demonstrated the Concept.
-The unit of practice.
-
 ## Attempt
 
-One try at an Exercise, together with the assistance it received. Every Attempt is one of:
-
-- **Independent** — made with nothing but the position shown.
-- **Assisted** — made after a hint was seen or requested, or after the move was revealed.
-
-An Attempt the learner got right after being shown the move is a real Attempt and worth recording,
-but it is **assisted practice, never independent success**. This distinction is the app's main
-measure and must not be blurred for convenience.
+A try at an Exercise with its mistake and assistance history. First-try completion without help,
+unassisted completion after mistakes, and assisted completion are distinct; retrying does not erase
+earlier mistakes, and replay after reveal is assisted practice.
 
 ## Hint stage
 
-One rung of the help ladder: a question, then a principle, then a board clue, then a comparison of
-candidates, then the reveal. Deeper rungs give more. The highest rung used is part of the Attempt.
+One of a finite set of attention-guiding clues for the current decision. Hint stages may name
+relevant pieces or relationships, but do not prescribe a move; solution reveal is not a hint stage.
+
+## Solution reveal
+
+An explicit request to see the remaining solution step by step at the learner's pace.
+It is separate from hints and never counts as independent success.
 
 ## Quickstart
 
-The mandatory opening sequence that takes a learner from nothing to making legal moves, capturing,
-giving and escaping check. Short, verified rather than explained, and not skippable.
+The previous learning module's opening sequence for practicing legal moves, captures, and check.
+It is not a mandatory gate for the replacement learning experience.
 
 ## Diagnostic
 
-A short check, after the Quickstart, that decides where the learner starts. It routes; it does not
-teach, and it does not grade.
+A check used in the previous learning plan to route the learner to a starting point, rather than
+to teach or grade. The replacement learning experience does not require one before practice.
+
+## Starting level
+
+The learner's editable self-description of their chess experience, remembered across visits.
+It is distinct from an ability estimate inferred from practice.
+
+## Recommended practice
+
+Practice in which the app chooses what to offer next, rather than staying within a topic selected
+by the learner.
+
+## Skipped exercise
+
+An Exercise the learner leaves by requesting another before completion. Skipping is neither success
+nor a wrong-move attempt, and does not by itself show inability.
 
 ## Review item
 

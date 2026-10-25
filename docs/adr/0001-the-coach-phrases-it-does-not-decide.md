@@ -1,5 +1,11 @@
 # The coach phrases; it does not decide
 
+> Partially superseded for the replacement preset-exercise module by
+> [What makes a preset exercise safe and useful to publish?](../../.scratch/learning-overhaul/issues/03-content-trust.md).
+> Trusted Lichess motif tags may name concepts without bespoke detectors, and prepared source-backed
+> teaching is permitted. The core module requires no live AI. The original runtime Coach policy
+> remains historical context; explanatory prose still does not decide chess correctness.
+
 A language model writes the coach's sentences. It never decides anything about the position.
 Every fact is computed from the position, every concept is a detector that fires or does not, and
 a validator checks the model's sentences before a learner sees them. Recorded as
